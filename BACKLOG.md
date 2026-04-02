@@ -104,6 +104,121 @@ The notebook uses a 7-day window (if ≥5 reviews) or falls back to the overall 
 
 **Possible fix:** Beta(fresh + 1, rotten + 1) posterior using all reviews, optionally with exponential time-weighting so recent reviews count more. This is smooth, handles small samples, and degrades gracefully.
 
+### 1.9 Time-varying p_fresh via hierarchical cross-movie model
+
+**Core idea:** Replace the static p_fresh with a time-varying p_fresh(t) that uses cross-movie data as the *base prediction*, not just a conservative floor. The key insight: if we have data from many historical movies, that data should inform what we expect p_fresh to be during the forecast window — and the current movie's own reviews then update that expectation.
+
+**The three-level structure:**
+
+**Level 1 — Within-movie relationships:** For each historical movie m, observe:
+- p_pre(m) = freshness rate during the pre-forecast window (e.g., [bet_open, forecast_start], typically ~1 week)
+- p_forecast(m) = freshness rate during the forecast window (e.g., [forecast_start, bet_close], typically 48h)
+- The "relationship" is how one maps to the other: did freshness hold steady, drift down, spike up?
+
+**Level 2 — Across-movie patterns:** Collect (p_pre(m), p_forecast(m)) pairs across all historical movies. This reveals the population-level pattern: how does pre-forecast freshness relate to forecast-window freshness? Is there systematic drift? Does it depend on features (review count, score level, genre, lifecycle stage)? This is a regression surface: E[p_forecast | p_pre, features].
+
+**Level 3 — Prediction for current movie:** The current movie has an observed p_pre. Plug it into the Level 2 regression to get a predicted p_forecast with uncertainty. This is the base prediction — informed by all historical movies, not just this one.
+
+This is a **hierarchical model**: the population-level distribution of freshness trajectories (Level 2) provides an informed prior for any individual movie. The individual movie's own data (Level 1) then updates toward its specific trajectory.
+
+**Implementation roadmap:**
+
+**Step 1 — Diagnostic regression (do this first):**
+Before building any sophisticated model, answer: does pre-forecast freshness actually predict forecast-window freshness? For each historical movie, compute (p_pre, p_forecast, n_reviews_at_forecast_start). Fit a simple regression: p_forecast ~ f(p_pre, n_reviews). Plot p_pre vs. p_forecast. This tells you whether the signal exists at all:
+- Tight cloud along the diagonal → p_fresh is roughly stationary, fancy time-varying stuff has limited upside.
+- Systematic drift (e.g., p_forecast < p_pre on average) → the signal the model needs to capture.
+- Noisy mess with no pattern → cross-movie data won't help much; rely on the individual movie's own reviews.
+
+**Step 2 — Hierarchical Bayesian model (if Step 1 shows signal):**
+Use the cross-movie regression as the *prior* for a Beta-Binomial model of the current movie:
+- The Level 2 regression gives E[p_forecast | p_pre, features] and its uncertainty → convert to Beta(α₀, β₀) prior parameters.
+- Update with the current movie's recent reviews using exponential forgetting: α(t) = α₀ + Σ y_i · exp(-γ(t - t_i)), β(t) = β₀ + Σ (1 - y_i) · exp(-γ(t - t_i)).
+- One hyperparameter (γ) controls how fast old reviews fade.
+- When movie-specific data is thin, the prediction defaults to the cross-movie prior. When strong, it overrides.
+
+**Step 3 — Trajectory feature enrichment (if enough movies):**
+Enrich the feature set for the Level 2 regression using trajectory-shape features:
+- **Functional PCA (FPCA):** Treat each movie's freshness-over-time curve as a function. FPCA finds the principal modes of variation (e.g., PC1 = overall level, PC2 = trend direction, PC3 = volatility). Project the current movie's partial trajectory onto this basis to get features. Python: `scikit-fda`.
+- **Latent trajectory clustering:** Cluster movies into discrete trajectory types ("starts high, stays high" vs. "starts high, decays" vs. "volatile"). Assign the current movie to a cluster and use that cluster's forecast behavior as the prediction. More interpretable than FPCA.
+- These are exploratory/preprocessing tools — they enrich the regression inputs, not replace the model itself.
+
+**Conditioning variables for Level 2 regression:**
+- **Review count at forecast start** — likely the strongest predictor. 200 reviews won't drift; 30 can swing wildly.
+- **Current score relative to threshold** — different regimes for margin of safety.
+- **Time since release** — early-lifecycle vs. long-tail movies drift differently.
+- **p_pre itself** — the pre-forecast freshness rate.
+- **FPCA scores or cluster assignment** (Step 3) — trajectory shape features.
+
+**Conservative floor (supplementary, not primary):**
+The conditioned drift distribution from Level 2 also provides a conservative bound. Use a quantile (e.g., 5th percentile of p_forecast among movies with similar features) rather than the raw worst case (a single order statistic that gets more extreme as sample grows). This floor is useful for risk management but is a byproduct of the model, not a separate component.
+
+**Drift should be measured in absolute percentage points**, not as a ratio. A movie at 95% drifting to 94% (ratio 0.989) and a movie at 55% drifting to 50% (ratio 0.909) are very different as ratios but both represent small absolute movements. Thresholds are on an absolute scale, so absolute drift is what matters.
+
+**Other mathematical methods to explore for p_fresh(t):**
+
+Several formal methods could model p_fresh as a function of time. These range from simple to heavy and could substitute for or enhance the Beta-Binomial component:
+
+- **Logistic regression with time features:** Model log-odds(p_fresh) = f(t). Linear f(t) captures monotonic drift; spline basis functions (GAM-style) capture nonlinear patterns without hand-picking polynomial degree. Natural choice for binary outcome modeling.
+- **Kernel-smoothed rate (Nadaraya-Watson):** p_fresh(t) = Σ K((t - t_i)/h) · y_i / Σ K((t - t_i)/h). Smooth local average — same spirit as the KDE for lambda(t). Poor at extrapolation.
+- **Gaussian Process on the logit scale:** GP prior on logit(p_fresh(t)) with Bernoulli observations. Gives full posterior with uncertainty bands and minimal structural assumptions. Heavier machinery; may not buy much over Beta-Binomial given data sparsity.
+- **Changepoint-aware Beta-Binomial:** Bayesian online changepoint detection (Adams & MacKay 2007) for the Beta posterior. Instead of smooth exponential forgetting, detects sudden regime shifts in p_fresh (e.g., a wave of negative reviews after controversy). More complex but handles discontinuities.
+
+**Data requirements:**
+- Historical review data across many resolved movies (the backfill — see 2.10).
+- Kalshi resolved market data with close times (for aligning forecast windows).
+- Enough movies to stratify by features. Minimum ~30-50 movies for meaningful conditioning; more is better for Step 3.
+
+**Relationship to other items:**
+- **1.4 (Bayesian p_fresh):** This subsumes 1.4. The hierarchical model is a strict upgrade over the static Beta posterior proposed there.
+- **1.1 (Beta-binomial for overdispersion):** Complementary. 1.1 addresses overdispersion in the *count* of fresh reviews for a given n. This item addresses the *estimation of p itself*.
+- **2.8 (Backtesting):** The cross-movie component depends on having resolved market data. Build 2.8 first, then use the same dataset here.
+- **2.10 (Database backfill):** Needs a broad movie dataset. Blocked on backfill.
+
+### 1.10 Review-integrity uncertainty in backfilled data
+
+Backfilled reviews capture the review state at scrape time, not at the time of original publication. RT critics can edit their reviews after publishing — changing their subjective score (e.g., 3/5 → 4/5) or, more rarely, flipping their tomatometer sentiment (Fresh ↔ Rotten). This means our historical "score at time T" reconstruction may be slightly off: we're assuming the sentiment recorded in the backfill was the sentiment at the time the review was originally published, but it may have been edited between publication and scrape.
+
+**What changes and what doesn't:**
+
+- **Subjective score edits** (more common): Do not affect the tomatometer. The tomatometer is derived from the binary Fresh/Rotten sentiment, not the numeric score. These edits are noise we can ignore for tomatometer modeling.
+- **Sentiment flips** (rare): A critic changes their review from Fresh to Rotten or vice versa. This *does* affect the tomatometer. One flip on a movie with N total reviews shifts the percentage by 1/N (one review changes sides) or 2/N (if the flip also changes the denominator boundary — but it doesn't; the review count stays the same). For N = 100, that's a 1 percentage point shift. For N = 200, it's 0.5 pp.
+
+**Impact on backtesting and modeling:**
+
+The concern is that our reconstructed historical tomatometer trajectory (used in 2.8 backtesting, 1.9 drift calibration, 2.3 trajectory forecasting) may contain small errors from post-publication edits. If we compute "the score was 87% at hour T" but a review had been flipped since then, the true score at hour T was 86% or 88%.
+
+- **Backtesting (2.8):** If the model's predicted probability was based on a slightly wrong historical score, the calibration analysis inherits that noise. On any single market this is negligible, but systematic bias (e.g., critics tend to flip toward Rotten more than toward Fresh) could accumulate.
+- **Cross-movie models (1.9, 2.3):** Models trained on historical score trajectories absorb this noise into their training data. If the noise is small and unbiased, it washes out. If there's a directional tendency, it biases the learned relationships.
+
+**Materiality assessment:**
+
+Likely small, but should be quantified rather than assumed away:
+
+- Sentiment flips are rare by all available evidence (critics occasionally revise scores but rarely change their binary recommendation).
+- On movies with 100+ reviews, even multiple flips move the tomatometer by low single-digit percentage points.
+- The model's forecast uncertainty (from Poisson count variance + binomial sentiment variance) is typically much larger than the data-integrity noise — the signal-to-noise ratio of the edit problem is low.
+- **However:** Near thresholds (e.g., the true score is 89.5%), even a 1 pp error can flip the binary outcome. This is exactly where we're betting, so even small systematic bias could matter at the margin.
+
+**Approaches to quantify and account for it:**
+
+1. **Sensitivity analysis.** For each backtesting scenario, perturb k reviews (flip their sentiment) and re-run the model. Measure how much the model's output probability changes. If flipping 1-3 reviews barely moves the needle, the uncertainty is immaterial. Sweep k from 1 to some reasonable upper bound.
+
+2. **Noise model on historical sentiments.** Treat each backfilled sentiment as observed with probability (1 - ε) and flipped with probability ε, where ε is the estimated flip rate. Propagate this through the score calculation: the "true" fresh count at time T is not deterministic but has a distribution centered on the observed count with binomial noise from ε. This widens the confidence interval on historical scores.
+
+3. **Confidence intervals on reconstructed scores.** Instead of treating the backfilled score at time T as exact, compute a confidence interval: score ± δ, where δ depends on the total review count and the assumed flip rate ε. Use these intervals in backtesting — if the model's prediction falls within the interval, it's consistent with the data even if the point estimate differs.
+
+4. **Empirical flip rate estimation.** If we have multiple scrapes of the same movie over time (which we do for currently-tracked movies), compare the sentiment for the same `unique_review_id` across scrapes. Any change is a detected flip. This gives a direct empirical estimate of ε. For backfilled movies (scraped once), we can't detect flips, but we can apply the rate estimated from tracked movies.
+
+5. **Propagation through models.** For models that take historical tomatometer percentage as input (1.9 regression, 2.3 trajectory matching), add the noise model as an observation-error term. Instead of conditioning on "score was exactly X% at time T," condition on "score was observed as X% ± δ." This is standard measurement-error modeling.
+
+**Relationship to other items:**
+- **2.8 (Backtesting):** This is a known source of error in backtesting. Quantify it as part of backtesting validation.
+- **2.10 (Database backfill):** Backfilled data is the primary source of this uncertainty. Real-time tracked movies have less exposure (shorter gap between publication and scrape).
+- **1.9 (Drift calibration):** The cross-movie regression absorbs this noise. If unbiased, it averages out; if biased, it shifts the learned drift.
+- **2.3 (Trajectory forecasting):** Same — trajectory library inherits the noise.
+
+**Priority:** Low effort to quantify (approach 1 or 4), and the answer likely confirms it's immaterial. Worth doing once backtesting is set up to put a number on it rather than hand-waving.
+
 ### 1.5 No consideration of Kalshi market price
 
 The model outputs P(break) but the notebook doesn't compare it to the market price. The bet is only +EV if:
@@ -419,6 +534,34 @@ This is the single most important thing to do before risking real money at any s
 
 **Literature:** See `SOURCES.md` §3.7 (Glosten-Milgrom, informed vs. uninformed trading) and §3.4 (prediction market efficiency — are these markets efficient enough that the price is a reliable signal?).
 
+### 2.10 Historical review database backfill
+
+**Core idea:** Backfill the Neon PostgreSQL database with review data from a broad set of historical movies (beyond the ones currently tracked by the scraper). Many backlog items are bottlenecked on having cross-movie data — this unblocks them.
+
+**What to backfill:**
+- Review-level data (reviewer, publication, sentiment, timestamp) for 50-100+ movies across release tiers:
+  - Wide-release blockbusters (~20 movies)
+  - Mid-tier releases (~20 movies)
+  - Limited/indie releases (~20 movies)
+  - Movies that had active Kalshi RT markets (all available — critical for 2.8 backtesting and 1.9 drift calibration)
+- Release metadata per movie: release date, release type (wide/limited/platform), genre, studio/distributor.
+
+**Approach options:**
+1. **Extend the existing RT scraper** (in `~/Desktop/rotten-tomatoes-analysis/`) to do a one-time historical pass. The scraper already knows how to parse RT review pages — it just needs to be pointed at historical movie slugs. Timestamps will be less precise (old reviews show dates, not relative times like "5m ago"), so `timestamp_confidence` will be "d" for most backfilled reviews.
+2. **Standalone backfill script** in this repo. Simpler, no coupling to the scraper's scheduling/config. Downside: duplicates parsing logic.
+3. **Academic/public datasets.** Check Kaggle and academic repositories for existing RT review datasets with timestamps. May save scraping effort but likely missing recent movies and `top_critic` flags.
+
+**Recommendation:** Option 1 (extend the scraper) is cleanest. The scraper already handles deduplication via `unique_review_id`, so re-scraping movies that overlap with current tracking is safe.
+
+**Items this unblocks:**
+- **1.8** Cross-movie empirical Lambda — needs review arrival data across many movies.
+- **1.9** Empirical score drift calibration — needs resolved-market movies with full review timelines.
+- **2.1** Reviewer graph model — needs multi-movie review history to build per-reviewer profiles.
+- **2.3** Early score trajectory forecasting — needs a library of score trajectories.
+- **2.5** Finite-pool / remaining-reviewer model — needs per-reviewer history across movies.
+
+**Priority:** High. This is infrastructure that multiplies the value of many other items. Should be done before or in parallel with 2.8 (backtesting).
+
 ---
 
 ## 3. Data Sources to Investigate
@@ -449,23 +592,26 @@ This is the single most important thing to do before risking real money at any s
 
 | # | Item | Impact | Effort | Dependencies |
 |---|------|--------|--------|-------------|
+| 2.10 | Historical review database backfill | Very High | Medium | Scraper extension or standalone script |
 | 1.5 | Compare to Kalshi market price | High | Low | Kalshi API |
 | 1.1 | Beta-binomial for sentiment overdispersion | High | Low | None |
-| 1.4 | Bayesian p_fresh estimation | Medium | Low | None |
-| 1.8 | Cross-movie empirical Lambda | High | Medium | Historical review data across movies (see `SOURCES.md` §2.5) |
+| 1.4 | Bayesian p_fresh estimation | Medium | Low | Subsumed by 1.9 if 1.9 is built |
+| 1.9 | Time-varying p_fresh via empirical drift calibration | Very High | Medium | 2.10 (backfill), 2.8 (resolved markets) |
+| 1.8 | Cross-movie empirical Lambda | High | Medium | 2.10 (backfill) |
 | 1.2 | Parametric rate model (replace KDE extrapolation) | High | Medium | Historical data across movies |
 | 2.4 | High-frequency score polling | High | Medium | Additional scraping |
 | 2.8 | Backtesting & calibration via resolved markets | Very High | Medium | Kalshi price history downloads, review DB |
 | 2.2 | Price trace anomaly detection | High | Medium | Kalshi price history downloads (available now) |
 | 1.3 | Negative binomial for arrival counts | Medium | Low | Historical data to fit dispersion |
-| 2.1 | Reviewer graph model | High | High | Multi-movie review history |
-| 2.3 | Early score trajectory forecasting | Medium | High | Historical trajectory library |
-| 2.5 | Finite-pool / remaining-reviewer model | Very High | Medium | Multi-movie review history for per-reviewer profiles |
+| 2.1 | Reviewer graph model | High | High | 2.10 (backfill) |
+| 2.3 | Early score trajectory forecasting | Medium | High | 2.10 (backfill) |
+| 2.5 | Finite-pool / remaining-reviewer model | Very High | Medium | 2.10 (backfill) |
 | 2.6 | Full score PMF + range betting + multi-movie scanning | Very High | Low-Medium | Kalshi API |
 | 2.7 | Automated execution pipeline | High | Medium | 2.6, Kalshi API |
 | 2.9 | Market price as leading signal | Medium | Low | Kalshi price history downloads |
 | 1.6 | RT rounding rule investigation | Low | Low | Empirical testing |
 | 1.7 | Top critic score separation | Low | Low | Market resolution rule check |
+| 1.10 | Review-integrity uncertainty in backfilled data | Low | Low | 2.10 (backfill), 2.8 (backtesting) |
 
 ---
 
