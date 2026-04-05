@@ -5,3 +5,5 @@ __pycache__/
 *.py[cod]
 .python-version
 .env
+brainstorm/
+plans/
