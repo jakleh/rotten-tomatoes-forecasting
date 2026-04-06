@@ -87,7 +87,7 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 - **Two-pass scraping**: The scraper runs `top-critics` then `all-critics` filters. A review scraped as a top critic has `top_critic = True`. The same review is NOT duplicated when scraped again in the all-critics pass (dedup catches it).
 - **Timestamp precision varies**: "m"-confidence timestamps are accurate to ~1 minute, "h" to ~1 hour, "d" to ~1 day. KDE-based analysis should be aware of this noise.
 - **Scrape frequency**: Every 50 minutes. Reviews with relative timestamps ("5m", "3h") get more precise `estimated_timestamp` values than date-format ones ("Mar 20").
-- **Movies tracked**: Configured in the scraper's `movies.json`. Being expanded to cover all ~141 movies that had Kalshi RT markets. Originally tracked: `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`.
+- **Movies tracked**: Configured in the scraper's `movies.json`. All ~141 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`.
 
 ## Approaches & Ideas
 
@@ -99,12 +99,12 @@ The pattern for new ideas: brainstorm -> gut-check -> notebook -> formalize (if 
 
 `BACKLOG.md` is the index of ideas to explore, data infrastructure to build, platform mechanics to look up, and operational items for when we're ready to bet. Read it before starting new work.
 
-**Current state:** One notebook exists (`notebooks/poisson_binomial_threshold.ipynb`) implementing the first model approach. Kalshi price histories for ~141 resolved markets are in `rt-price-histories/`. The RT scraper is being expanded to cover all ~141 movies (in progress). We're in the observe-and-brainstorm phase — no model is finalized.
+**Current state:** One notebook exists (`notebooks/poisson_binomial_threshold.ipynb`) implementing the first model approach. Kalshi price histories for ~141 resolved markets are in `rt-price-histories/`. The RT scraper has completed backfilling all ~141 movies into the Neon database. We're in the observe-and-brainstorm phase — no model is finalized.
 
 `SOURCES.md` lists specific data, hard numbers, and literature needed to resolve open questions. `PROMPTS.md` has ready-to-use handoff prompts for starting new conversations.
 
 **Recommended next steps (in order):**
-1. **Finish dataset build.** Complete the ~141 movie scrape. Dump the reviews table locally so price histories and review data can be joined by `movie_slug` (folder names in `rt-price-histories/` match DB slugs).
+1. **Build local dataset.** Dump the reviews table to `reviews.csv`. Create `movies_index.csv` with per-movie metadata (trading volume, resolution bucket, key dates). See `brainstorm/brainstorm_movies_index.md` for design.
 2. **Informal observation + gut-checks on the joint dataset.** See `brainstorm/` for strategy ideas in progress. Key questions: How often does the market misprice relative to actual score? Does that concentrate in low-activity markets? Does trading activity correlate with review count?
 3. **Formalize surviving strategies** into modular functions once the patterns are validated.
 

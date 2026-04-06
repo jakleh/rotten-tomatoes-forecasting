@@ -14,13 +14,20 @@ Read CLAUDE.md and BACKLOG.md §4.3. Before we start committing, set up nbstripo
 
 **Prereqs:** None. Do this before anything else.
 
-### Prompt 1: Local DB dump for joint analysis (Backlog §1.2)
+### Prompt 1: Local data dump + movies index (Backlog §1.2)
 
 ```
-Read CLAUDE.md and BACKLOG.md §1.2. The RT scraper has finished backfilling ~141 movies into the Neon database. I want to dump the reviews table locally so we can join review data with the Kalshi price history CSVs in rt-price-histories/ (folder names = movie slugs = join key). Figure out the best format — CSV, parquet, or DuckDB — and set it up so we can run ad-hoc queries across both datasets without hitting Neon.
+Read CLAUDE.md, BACKLOG.md §1.2, and brainstorm/brainstorm_movies_index.md. The RT scraper has finished backfilling ~141 movies into the Neon database. I need to:
+
+1. Dump the reviews table locally (reviews.csv at project root) so we can join review data with the Kalshi price history CSVs in rt-price-histories/ (folder names = movie slugs = join key).
+2. Create a movies_index.csv at the project root — one row per movie with: movie_slug, trading_volume, resolution_bucket, bet_open_date, bet_close_date, embargo_lift_date.
+
+I already have trading_volume in a Google Sheet that I'll paste in. resolution_bucket (which Kalshi threshold bucket resolved Yes) needs to be gathered from the Kalshi UI. bet_open_date and bet_close_date can be derived from the price history CSVs. embargo_lift_date can be approximated from the reviews DB (earliest estimated_timestamp per slug).
+
+See the brainstorm doc for the full design, including why exact final scores aren't computable for historical movies (day-level timestamp granularity makes close-date reviews ambiguous relative to the 10 AM ET cutoff).
 ```
 
-**Prereqs:** Backlog §1.1 (historical backfill) must be complete.
+**Prereqs:** Backlog §1.1 (historical backfill) complete. DATABASE_URL for the reviews dump. Google Sheet data for trading volume. Kalshi UI access for resolution buckets.
 
 ### Prompt 2: High-frequency score polling (Backlog §1.3)
 

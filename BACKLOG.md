@@ -10,11 +10,21 @@ Backfill the Neon PostgreSQL database with review data for all ~141 movies that 
 
 **Approach:** Extend the existing RT scraper (in `~/Desktop/rotten-tomatoes-analysis/`) to do a one-time historical pass. It already handles parsing and deduplication. Timestamps will be day-level precision for backfilled reviews (`timestamp_confidence` = "d").
 
-**Status:** In progress — scraper is being expanded to cover all ~141 movies.
+**Status: Complete.** All ~141 movies backfilled.
 
-### 1.2 Local DB dump for joint analysis
+### 1.2 Local data dump + movies index
 
-Dump the reviews table locally so price histories and review data can be joined by `movie_slug` without hitting Neon. Folder names in `rt-price-histories/` match DB slugs, so the join key is direct — no mapping table needed. Consider DuckDB for SQL over local files without running a server.
+Dump the reviews table locally and create a movies index CSV so price histories, reviews, and per-movie metadata can be joined without hitting Neon.
+
+**Reviews dump:** Export the full `reviews` table to `reviews.csv` at project root. Folder names in `rt-price-histories/` match DB slugs, so the join key is direct.
+
+**Movies index (`movies_index.csv`):** A dimension table with one row per movie. Columns: `movie_slug`, `trading_volume` (from Google Sheet), `resolution_bucket` (from Kalshi UI — which threshold bucket resolved Yes), `bet_open_date`, `bet_close_date`, `embargo_lift_date` (approximated from earliest review timestamp per slug).
+
+Resolution bucket is the ground truth label for backtesting. Exact final score isn't reliably computable for historical movies because backfilled reviews have day-level timestamp granularity, so close-date reviews are ambiguous relative to the 10 AM ET cutoff. The resolution bucket (which side of each threshold) is sufficient for most analyses.
+
+See `brainstorm/brainstorm_movies_index.md` for full design and the resolution score problem.
+
+**Status:** Not started. Blocked on: reviews dump requires DATABASE_URL; trading volume + resolution bucket require manual data entry from Google Sheet / Kalshi UI.
 
 ### 1.3 High-frequency score polling
 
@@ -23,6 +33,8 @@ Between scraper runs (50-minute gaps), RT updates the displayed score in real ti
 ### 1.4 Final trading volume for resolved markets
 
 Collect the final cumulative trading volume for each of the ~141 resolved Kalshi RT markets. This is visible on the Kalshi UI for closed bets. One-time manual or scripted capture. Gives us a real activity measure per market (stronger than the minutes-with-price-activity proxy from the price CSVs).
+
+**Status:** Jake has recorded trading volume for each movie in a Google Sheet. Needs to be exported and incorporated into `movies_index.csv` (see §1.2).
 
 ### 1.5 Kalshi volume scraper (live markets)
 
@@ -227,13 +239,13 @@ Current phase is data infrastructure + informal observation. Priorities reflect 
 
 | # | Item | Category | Impact | Effort | Status/Dependencies |
 |---|------|----------|--------|--------|---------------------|
-| 1.1 | Historical review database backfill | Infrastructure | Very High | Medium | In progress |
-| 1.2 | Local DB dump for joint analysis | Infrastructure | High | Low | Blocked on 1.1 |
+| 1.1 | Historical review database backfill | Infrastructure | Very High | Medium | **Complete** |
+| 1.2 | Local data dump + movies index | Infrastructure | High | Low-Medium | Ready — needs DATABASE_URL + manual data entry |
 | 2.8 | Forecast-score divergence (systematic backtest) | Exploration | Very High | Medium | Needs 1.2 |
 | 2.10 | Volume-review count correlation | Exploration | High | Low | Can start now (price CSVs + activity proxy) |
 | 2.9 | Embargo-lift divergence | Exploration | High | Medium | Needs 1.2 |
 | 2.11 | Price trace anomaly detection | Exploration | High | Medium | Can start now (price CSVs only) |
-| 1.4 | Kalshi volume scraper | Infrastructure | Medium | Medium | Independent |
+| 1.4 | Trading volume (resolved markets) | Infrastructure | Medium | Low | Volume recorded in Google Sheet — needs export to movies index |
 | 1.3 | High-frequency score polling | Infrastructure | Medium | Medium | Independent |
 | 3.2 | RT rounding rules | Platform | Low | Low | Partially resolved — needs empirical test (blocked on 1.1) |
 | 3.3 | Top critic distinction | Platform | Low | Low | **Resolved** — All Critics |
