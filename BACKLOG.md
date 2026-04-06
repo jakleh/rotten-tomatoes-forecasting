@@ -146,13 +146,15 @@ Any model output is only useful if compared to the Kalshi market price. Edge = m
 
 How does RT round the displayed Tomatometer? (Round half up? Truncate? Banker's rounding?) Kalshi resolves against the *displayed* score, so the rounding rule determines the outcome near boundaries.
 
+**Status (2026-04-05):** RT probably uses standard rounding (nearest whole number). Needs empirical confirmation via resolved-market analysis. See `brainstorm/brainstorm_rounding_and_resolution.md` for the test plan.
+
 See SOURCES.md §2.1.
 
 ### 3.3 Top critic vs. all critic distinction
 
-RT has separate scores. Some Kalshi markets may resolve on one or the other. Need to check resolution rules.
+~~RT has separate scores. Some Kalshi markets may resolve on one or the other. Need to check resolution rules.~~
 
-See SOURCES.md §1.2.
+**Resolved (2026-04-05):** Contract specifies "All Critics" Tomatometer. See `brainstorm/brainstorm_rounding_and_resolution.md`.
 
 ### 3.4 Kalshi fee schedule
 
@@ -162,9 +164,16 @@ See SOURCES.md §1.1.
 
 ### 3.5 Kalshi resolution rules
 
-Exact resolution language: displayed score or exact fraction? All critics or top critics? Score at market close or a snapshot? What if RT changes the score after close?
+~~Exact resolution language: displayed score or exact fraction? All critics or top critics? Score at market close or a snapshot? What if RT changes the score after close?~~
 
-See SOURCES.md §1.2.
+**Resolved (2026-04-05):** All questions answered from the contract (`rt-rules-contract.pdf`):
+- **Source:** Displayed RT "All Critics" Tomatometer (no independent calculation).
+- **Snapshot:** 10:00 AM ET on expiration date (first Monday after wide release). Post-expiration revisions ignored.
+- **Thresholds:** "Above X" = strictly > X (displayed >= X+1). "Between" = inclusive both ends.
+- **Fallback:** If no data Monday 10 AM ET, tries Tuesday. If nothing a week later, all resolve No.
+- **Position limit:** $25,000/member. Settlement: $1.00/contract. Min tick: $0.01.
+
+See `brainstorm/brainstorm_rounding_and_resolution.md` for full analysis.
 
 ---
 
@@ -226,7 +235,7 @@ Current phase is data infrastructure + informal observation. Priorities reflect 
 | 2.11 | Price trace anomaly detection | Exploration | High | Medium | Can start now (price CSVs only) |
 | 1.4 | Kalshi volume scraper | Infrastructure | Medium | Medium | Independent |
 | 1.3 | High-frequency score polling | Infrastructure | Medium | Medium | Independent |
-| 3.2 | RT rounding rules | Platform | Low | Low | Independent |
-| 3.3 | Top critic distinction | Platform | Low | Low | Independent |
-| 3.4-3.5 | Kalshi fees + resolution rules | Platform | Medium | Low | Independent |
+| 3.2 | RT rounding rules | Platform | Low | Low | Partially resolved — needs empirical test (blocked on 1.1) |
+| 3.3 | Top critic distinction | Platform | Low | Low | **Resolved** — All Critics |
+| 3.4-3.5 | Kalshi fees + resolution rules | Platform | Medium | Low | 3.5 **resolved**; 3.4 (fees) still open |
 | 4.1 | Backtesting framework | Operational | Very High | Medium | After explorations mature |

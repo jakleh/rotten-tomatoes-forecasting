@@ -15,14 +15,16 @@ Resources, hard numbers, and literature needed to resolve assumptions and open q
 - Are there maker/taker fee differences (limit order vs. market order)?
 **Where to look:** Kalshi fee page, account settings, or API docs.
 
-### 1.2 RT market resolution rules [GATHER]
-**Resolves:** Backlog §3.2 (rounding), §3.3 (top critic vs. all critic), §3.5 (resolution rules).
-**What to find:**
-- Exact resolution language: does Kalshi resolve on the *displayed* integer Tomatometer, or the exact fraction?
-- Which score: all critics or top critics?
-- What is the resolution source — the RT page URL at a specific time? A snapshot? The score at market close?
-- What happens if RT changes its score after market close (e.g., a review is removed)?
-**Where to look:** The fine print / rules section on any active Kalshi RT market page.
+### 1.2 RT market resolution rules [RESOLVED]
+**Resolves:** Backlog §3.3 (top critic vs. all critic), §3.5 (resolution rules).
+**Resolved (2026-04-05):** Full contract reviewed (`rt-rules-contract.pdf` in project root).
+- **Source:** Displayed RT "All Critics" Tomatometer. No independent calculation by Kalshi.
+- **Snapshot:** 10:00 AM ET on expiration date (first Monday after wide release). Post-expiration revisions ignored.
+- **Thresholds:** "Above X" = strictly > X (for integers: displayed >= X+1). "Between" = inclusive both ends.
+- **Fallback:** If no data Monday 10 AM ET, tries Tuesday. If nothing a week later, all markets resolve No.
+- **Position limit:** $25,000/member. Settlement: $1.00/contract. Min tick: $0.01.
+
+See `brainstorm/brainstorm_rounding_and_resolution.md` for full analysis including RT rounding (still unconfirmed — empirical test planned).
 
 ### 1.3 Price history CSV format [GATHER]
 **Resolves:** Data pipeline design. **Note:** This is now largely resolved — we have ~141 movie price histories in `rt-price-histories/` with minute/hour/day granularity. Columns: timestamp + one per threshold bucket ("Above X"), prices in cents.
@@ -66,13 +68,11 @@ Resources, hard numbers, and literature needed to resolve assumptions and open q
 
 ## 2. Rotten Tomatoes — Platform Mechanics
 
-### 2.1 Tomatometer rounding rule [GATHER]
+### 2.1 Tomatometer rounding rule [PARTIALLY RESOLVED]
 **Resolves:** Backlog §3.2.
-**What to find:**
-- How does RT round the displayed integer Tomatometer? Round half up? Truncate? Banker's rounding?
-- Test empirically: find a movie where fresh/total produces a .5 fraction and see what RT displays.
-- Example: if 45/50 = 90.0% and 44/49 = 89.796...%, what does RT show for 89.796%?
-**Where to look:** RT website, by finding movies near a rounding boundary and comparing the displayed score to fresh_count/total_count from our DB.
+**Known (2026-04-05):** RT probably uses standard rounding (nearest whole number). Unconfirmed — needs empirical validation.
+**Empirical test plan:** Use our ~141 resolved markets. Compute raw fraction (fresh/total) at bet close from our DB, compare to bet outcomes for nearest threshold. Near-boundary cases (e.g., 0.601, 0.899) will distinguish standard rounding from truncation/ceiling. See `brainstorm/brainstorm_rounding_and_resolution.md` for full method.
+**Where to look:** RT website for spot checks, but the resolved-market empirical test is more conclusive and higher-volume.
 
 ### 2.2 Critic credentialing and pool size [GATHER]
 **Resolves:** Finite-pool model (see `brainstorm/brainstorm_finite_pool_model.md`).
