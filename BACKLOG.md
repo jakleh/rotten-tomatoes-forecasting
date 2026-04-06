@@ -158,9 +158,7 @@ Any model output is only useful if compared to the Kalshi market price. Edge = m
 
 How does RT round the displayed Tomatometer? (Round half up? Truncate? Banker's rounding?) Kalshi resolves against the *displayed* score, so the rounding rule determines the outcome near boundaries.
 
-**Status (2026-04-05):** RT probably uses standard rounding (nearest whole number). Needs empirical confirmation via resolved-market analysis. See `brainstorm/brainstorm_rounding_and_resolution.md` for the test plan.
-
-See SOURCES.md §2.1.
+**Resolved (2026-04-06):** RT uses **standard rounding** (round half up). Confirmed empirically: The Drama had 134/174 = 76.571% at bet close, displayed as 77%. This rules out truncation (which would give 76). See `brainstorm/brainstorm_rounding_and_resolution.md`.
 
 ### 3.3 Top critic vs. all critic distinction
 
@@ -247,7 +245,7 @@ Current phase is data infrastructure + informal observation. Priorities reflect 
 | 2.11 | Price trace anomaly detection | Exploration | High | Medium | Can start now (price CSVs only) |
 | 1.4 | Trading volume (resolved markets) | Infrastructure | Medium | Low | Volume recorded in Google Sheet — needs export to movies index |
 | 1.3 | High-frequency score polling | Infrastructure | Medium | Medium | Independent |
-| 3.2 | RT rounding rules | Platform | Low | Low | Partially resolved — needs empirical test (blocked on 1.1) |
+| 3.2 | RT rounding rules | Platform | Low | Low | **Resolved** — standard rounding confirmed |
 | 3.3 | Top critic distinction | Platform | Low | Low | **Resolved** — All Critics |
 | 3.4-3.5 | Kalshi fees + resolution rules | Platform | Medium | Low | 3.5 **resolved**; 3.4 (fees) still open |
 | 4.1 | Backtesting framework | Operational | Very High | Medium | After explorations mature |

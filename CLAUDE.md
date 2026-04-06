@@ -6,6 +6,10 @@ Finding profitable edges in Kalshi prediction markets for Rotten Tomatoes Tomato
 
 This project connects to the same Neon PostgreSQL database used by the RT scraper (separate repo at `~/Desktop/rotten-tomatoes-analysis/`), but is fully independent -- no shared code, no shared config.
 
+## Build Protocol
+
+Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing and presenting a plan doc. See `PROTOCOL.md` for what qualifies as non-trivial.
+
 ## Development Philosophy
 
 The goal is `data -> max profit`. Premature formalization (investing in specific models before understanding where the edge actually is) is the main risk. The workflow:
@@ -24,9 +28,13 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── pyproject.toml              # Dependencies (uv managed)
 ├── .gitignore
 ├── CLAUDE.md                   # This file
+├── PROTOCOL.md                 # Build protocol (plan → implement → validate)
 ├── BACKLOG.md                  # Ideas to explore, infrastructure, platform mechanics
 ├── SOURCES.md                  # Literature, data, and hard numbers to gather
 ├── PROMPTS.md                  # Handoff prompts for new conversations
+├── .env                        # DATABASE_URL (gitignored)
+├── reviews.csv                 # Local dump of reviews table (gitignored)
+├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
 ├── notebooks/                  # One notebook per idea/exploration
 │   └── poisson_binomial_threshold.ipynb
 ├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
@@ -93,7 +101,7 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 
 No single model is settled. Specific approaches live in `brainstorm/` (gitignored) and in individual notebooks under `notebooks/`. The first approach explored was a Poisson/binomial threshold-breaking model (see `brainstorm/brainstorm_poisson_binomial_threshold.md` and `notebooks/poisson_binomial_threshold.ipynb`).
 
-The pattern for new ideas: brainstorm -> gut-check -> notebook -> formalize (if it survives). See `brainstorm/` for all strategy brainstorms and `BACKLOG.md` for the full index of ideas to explore.
+The pattern for new ideas: brainstorm -> gut-check -> notebook -> formalize (if it survives). See `brainstorm/` for all strategy brainstorms and `BACKLOG.md` for the full index of ideas to explore. When moving from brainstorm to code, follow the build protocol in `PROTOCOL.md` (plan -> implement -> validate).
 
 ## Backlog & Strategy
 

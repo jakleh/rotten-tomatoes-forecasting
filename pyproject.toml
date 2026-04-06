@@ -13,4 +13,5 @@ dependencies = [
     "ipykernel>=6.29",
     "notebook>=7.0",
     "nbstripout>=0.8",
+    "python-dotenv>=1.0",
 ]
