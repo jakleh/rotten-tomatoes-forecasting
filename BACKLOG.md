@@ -24,7 +24,7 @@ Resolution bucket is the ground truth label for backtesting. Exact final score i
 
 See `brainstorm/brainstorm_movies_index.md` for full design and the resolution score problem.
 
-**Status:** Not started. Blocked on: reviews dump requires DATABASE_URL; trading volume + resolution bucket require manual data entry from Google Sheet / Kalshi UI.
+**Status: Complete.** Reviews dumped to `reviews.csv` (23K+ reviews). `movies_index.csv` populated with trading volume, bet open/close dates, embargo lift dates, score ranges, and review counts. Score ranges derived from minute-level price CSVs using biggest-drop boundary detection. See `plans/plan_populate_movies_index.md` for details and validation results.
 
 ### 1.3 High-frequency score polling
 
@@ -238,7 +238,7 @@ Current phase is data infrastructure + informal observation. Priorities reflect 
 | # | Item | Category | Impact | Effort | Status/Dependencies |
 |---|------|----------|--------|--------|---------------------|
 | 1.1 | Historical review database backfill | Infrastructure | Very High | Medium | **Complete** |
-| 1.2 | Local data dump + movies index | Infrastructure | High | Low-Medium | Ready — needs DATABASE_URL + manual data entry |
+| 1.2 | Local data dump + movies index | Infrastructure | High | Low-Medium | **Complete** |
 | 2.8 | Forecast-score divergence (systematic backtest) | Exploration | Very High | Medium | Needs 1.2 |
 | 2.10 | Volume-review count correlation | Exploration | High | Low | Can start now (price CSVs + activity proxy) |
 | 2.9 | Embargo-lift divergence | Exploration | High | Medium | Needs 1.2 |
