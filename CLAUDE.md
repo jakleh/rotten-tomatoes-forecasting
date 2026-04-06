@@ -20,7 +20,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 4. **Iterate 1-3** until concepts survive the gut-checks.
 5. **Formalize** the survivors into modular functions. By this point the ideas are crystal clear, so the math is just implementation.
 
-**Current phase:** Steps 1-2. Building the dataset (scraping ~141 movies into the reviews DB, collecting Kalshi price histories). Brainstorming strategies from informal observation of the price data. Not yet formalizing.
+**Current phase:** Step 5 — formalizing the Poisson-binomial betting function. The dataset is built, observations are done, the surviving approach has been identified.
 
 ## File Structure
 
@@ -29,14 +29,17 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── .gitignore
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan → implement → validate)
-├── BACKLOG.md                  # Ideas to explore, infrastructure, platform mechanics
+├── BACKLOG.md                  # Priorities, ideas, infrastructure, platform mechanics
 ├── SOURCES.md                  # Literature, data, and hard numbers to gather
 ├── PROMPTS.md                  # Handoff prompts for new conversations
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
-├── notebooks/                  # One notebook per idea/exploration
-│   └── poisson_binomial_threshold.ipynb
+├── notebooks/
+│   ├── dataset_survey.ipynb               # Broad survey of the joint dataset (complete)
+│   ├── misprice_backtest.ipynb            # Systematic misprice backtest — bounds approach (complete)
+│   ├── misprice_backtest_deep_dive.ipynb  # Deep dive on clean-data movies (complete)
+│   └── poisson_binomial_threshold.ipynb   # Original Poisson-binomial model exploration
 ├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Strategy brainstorms (gitignored)
@@ -52,7 +55,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 
 ## Database Connection
 
-The notebook connects to the same Neon PostgreSQL instance used by the scraper. Connection is via `DATABASE_URL` environment variable.
+The project connects to the same Neon PostgreSQL instance used by the scraper. Connection is via `DATABASE_URL` environment variable.
 
 ```bash
 # Launch notebook with database access
@@ -97,24 +100,36 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 - **Scrape frequency**: Every 50 minutes. Reviews with relative timestamps ("5m", "3h") get more precise `estimated_timestamp` values than date-format ones ("Mar 20").
 - **Movies tracked**: Configured in the scraper's `movies.json`. All ~141 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`.
 
-## Approaches & Ideas
+## Approach: Poisson-Binomial Betting Function
 
-No single model is settled. Specific approaches live in `brainstorm/` (gitignored) and in individual notebooks under `notebooks/`. The first approach explored was a Poisson/binomial threshold-breaking model (see `brainstorm/brainstorm_poisson_binomial_threshold.md` and `notebooks/poisson_binomial_threshold.ipynb`).
+The surviving approach after exploration: a **Poisson-binomial model** that computes the probability of a movie's final score crossing a Kalshi threshold, given accumulated reviews and expected future review arrivals.
 
-The pattern for new ideas: brainstorm -> gut-check -> notebook -> formalize (if it survives). See `brainstorm/` for all strategy brainstorms and `BACKLOG.md` for the full index of ideas to explore. When moving from brainstorm to code, follow the build protocol in `PROTOCOL.md` (plan -> implement -> validate).
+**Inputs (7):** threshold, market price, current fresh count, current total count, time until close, lambda (review arrival rate), p_fresh (success rate).
+
+**Output:** Edge in cents = expected profit per contract. Positive = bet, negative = pass.
+
+**What was tried and why alternatives were abandoned:**
+- *Deterministic bounds (worst/best case from remaining reviews)*: Too conservative — by the time bounds lock the outcome, the market has already corrected. See `notebooks/misprice_backtest.ipynb` and `notebooks/misprice_backtest_deep_dive.ipynb`.
+- *Market-price-only strategies (spike detection, anomaly reversion)*: Interesting ideas in `brainstorm/brainstorm_market_strategies.md` but require the structural model first to define "fair value."
+
+**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable. These start simple (lambda = recent review rate, p_fresh = running average) and get refined with cross-movie data, top-critic correction, time-varying rates, etc. See `brainstorm/` for refinement ideas.
 
 ## Backlog & Strategy
 
-`BACKLOG.md` is the index of ideas to explore, data infrastructure to build, platform mechanics to look up, and operational items for when we're ready to bet. Read it before starting new work.
+`BACKLOG.md` has the full priority list. `PROMPTS.md` has handoff prompts for new conversations. `SOURCES.md` lists data and literature to gather.
 
-**Current state:** One notebook exists (`notebooks/poisson_binomial_threshold.ipynb`) implementing the first model approach. Kalshi price histories for ~141 resolved markets are in `rt-price-histories/`. The RT scraper has completed backfilling all ~141 movies into the Neon database. We're in the observe-and-brainstorm phase — no model is finalized.
+**Current state:** Dataset is built (reviews.csv, movies_index.csv, ~141 price histories). Three exploration notebooks complete (dataset survey, misprice backtest, deep dive). The Poisson-binomial approach has survived gut-checks. Now formalizing.
 
-`SOURCES.md` lists specific data, hard numbers, and literature needed to resolve open questions. `PROMPTS.md` has ready-to-use handoff prompts for starting new conversations.
+**What we learned from exploration:**
+- 23/141 movies had clear misprices (median 57¢ edge) — the opportunity is real and not volume-dependent.
+- Deterministic bounds approach was too conservative — max 7¢ edge on clean-data movies. The market corrects before bounds can prove it wrong.
+- 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near close). Only movies with minute-level late-window timestamps are reliable for boundary analysis.
+- Conclusion: a *probabilistic* approach is needed to capture edges before the market self-corrects.
 
 **Recommended next steps (in order):**
-1. **Build local dataset.** Dump the reviews table to `reviews.csv`. Create `movies_index.csv` with per-movie metadata (trading volume, resolution bucket, key dates). See `brainstorm/brainstorm_movies_index.md` for design.
-2. **Informal observation + gut-checks on the joint dataset.** See `brainstorm/` for strategy ideas in progress. Key questions: How often does the market misprice relative to actual score? Does that concentrate in low-activity markets? Does trading activity correlate with review count?
-3. **Formalize surviving strategies** into modular functions once the patterns are validated.
+1. **Build the betting function.** Poisson-binomial model: 7 inputs → edge in cents. Fresh/total counts come from the existing scraper's DB. Lambda and p_fresh start simple.
+2. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). Needed for real-time lambda estimation and future backtesting.
+3. **Kalshi API client.** Fetch live prices for automated comparison. Foundation for the eventual execution pipeline.
 
 ## How to Run
 

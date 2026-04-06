@@ -1,118 +1,79 @@
 # Prompts
 
-Handoff prompts for starting new conversations. Organized by phase: data infrastructure first, then explorations, then operational. Each prompt references the relevant backlog items and brainstorm files.
+Handoff prompts for starting new conversations. Read CLAUDE.md and BACKLOG.md for full context before using any prompt.
 
 ---
 
-## Data Infrastructure
+## What We Learned (Context for All Prompts)
 
-### Prompt 0: Repo setup — nbstripout + git hygiene (Backlog §4.3)
+The dataset survey (23/141 movies mispriced, median 57¢ edge) confirmed the opportunity is real. The systematic misprice backtest showed that deterministic bounds (worst/best case from remaining reviews) are too conservative — by the time they lock the outcome, the market has already self-corrected (max 7¢ edge on clean-data movies). A probabilistic approach (Poisson-binomial) is needed to capture edges before the market corrects.
 
-```
-Read CLAUDE.md and BACKLOG.md §4.3. Before we start committing, set up nbstripout as a git filter so notebook outputs (which may contain DB credentials in tracebacks) are automatically stripped on commit. Do NOT commit notebook outputs.
-```
-
-**Prereqs:** None. Do this before anything else.
-
-### Prompt 1: Local data dump + movies index (Backlog §1.2)
-
-```
-Read CLAUDE.md, BACKLOG.md §1.2, and brainstorm/brainstorm_movies_index.md. The RT scraper has finished backfilling ~141 movies into the Neon database. I need to:
-
-1. Dump the reviews table locally (reviews.csv at project root) so we can join review data with the Kalshi price history CSVs in rt-price-histories/ (folder names = movie slugs = join key).
-2. Create a movies_index.csv at the project root — one row per movie with: movie_slug, trading_volume, resolution_bucket, bet_open_date, bet_close_date, embargo_lift_date.
-
-I already have trading_volume in a Google Sheet that I'll paste in. resolution_bucket (which Kalshi threshold bucket resolved Yes) needs to be gathered from the Kalshi UI. bet_open_date and bet_close_date can be derived from the price history CSVs. embargo_lift_date can be approximated from the reviews DB (earliest estimated_timestamp per slug).
-
-See the brainstorm doc for the full design, including why exact final scores aren't computable for historical movies (day-level timestamp granularity makes close-date reviews ambiguous relative to the 10 AM ET cutoff).
-```
-
-**Prereqs:** Backlog §1.1 (historical backfill) complete. DATABASE_URL for the reviews dump. Google Sheet data for trading volume. Kalshi UI access for resolution buckets.
-
-### Prompt 2: High-frequency score polling (Backlog §1.3)
-
-```
-Read CLAUDE.md and BACKLOG.md §1.3. I want to detect review arrivals between scraper runs by polling the displayed Tomatometer score at high frequency (every 1-5 minutes). Design a lightweight poller that scrapes just the score number for each active movie and logs timestamp + score. This doesn't need the full review page parse — just the displayed integer.
-```
-
-### Prompt 3: Kalshi API client (Backlog §5.1)
-
-```
-Read CLAUDE.md and BACKLOG.md §5.1. Build a minimal Kalshi API client that fetches live prices for all RT markets. No order placement — just price retrieval. This is the foundation for comparing any model/strategy output to market prices and for the eventual execution pipeline.
-```
-
-**Prereqs:** Need Kalshi API credentials and familiarity with their API docs (SOURCES.md §1.4, §1.5).
+Key data notes:
+- 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near the 10 AM ET close cutoff). Only movies with minute-level timestamps are reliable for boundary-adjacent analysis.
+- Top critics are systematically ~6pp more negative — early review baskets overweight them.
+- The scraper runs every 50 minutes; fresh/total counts come from the Neon PostgreSQL DB.
+- Score ranges in `movies_index.csv` are fractions (e.g., 0.8750 = 87.5%). Price CSVs use tz-aware UTC timestamps and cents.
 
 ---
 
-## Explorations — Gut-Checks on the Joint Dataset
+## Active Priorities
 
-These prompts are for the brainstorm-and-count phase. Each one investigates a specific question from the data. Results go in notebooks (one per exploration).
-
-### Prompt 4: Systematic backtest of forecast-score divergence (Backlog §2.8)
+### Prompt 1: Build the Poisson-binomial betting function (Backlog §1.1)
 
 ```
-Read CLAUDE.md, BACKLOG.md §2.8, and brainstorm/brainstorm_market_strategies.md (especially "Recommended next step: systematic backtest"). For each of the ~141 resolved movies, I want to know: at the point where the actual score was "knowable" from accumulated reviews, what was the Kalshi market pricing? Compute the edge in cents and how long it persisted. Segment by market activity level (minute-row count as proxy for volume). This tells us how big the opportunity is and where it concentrates.
+Read CLAUDE.md and BACKLOG.md §1.1. Build a function that computes the expected edge (in cents) for a Kalshi RT bet.
+
+Inputs (7): threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh.
+
+Method: Poisson-binomial. For each possible number of additional reviews k (Poisson with rate lambda * hours_to_close), and for each possible fresh count among those k (binomial with p_fresh), compute final score and check threshold crossing. Sum to get P(resolve Yes) and P(resolve No). Edge = P(Yes) * (100 - price) - P(No) * price.
+
+Start simple: lambda = recent review rate, p_fresh = current running average. The function should be a standalone module (not a notebook) that can be called from anywhere. Include a DB query helper to fetch current fresh/total counts per movie from the Neon PostgreSQL database (same one the RT scraper writes to — see CLAUDE.md for schema).
 ```
 
-**Prereqs:** Local DB dump (Prompt 1) must be done so reviews and price histories can be joined.
+**Prereqs:** DATABASE_URL environment variable for review counts.
 
-### Prompt 5: Volume-review count correlation (Backlog §2.10)
-
-```
-Read CLAUDE.md and BACKLOG.md §2.10. Using the price history CSVs in rt-price-histories/, compute the minute-row count for each movie as a proxy for trading activity. Once the review DB is available locally, correlate activity with total review count. Plot a scatter. Is there structure? If so, can we predict total review count from early trading activity — which would give us a review ceiling for free?
-```
-
-**Prereqs:** Can start the activity-proxy side immediately. Full correlation needs Prompt 1.
-
-### Prompt 6: Embargo-lift divergence (Backlog §2.9)
+### Prompt 2: High-frequency score polling (Backlog §1.2)
 
 ```
-Read CLAUDE.md, BACKLOG.md §2.9, and brainstorm/brainstorm_market_strategies.md (strategy 1). For resolved movies, compare the initial review basket (first 20 reviews) to the Kalshi market price at that time. How often do they disagree? When they disagree, who's right — the basket or the market? This tells us whether early review data has informational edge over the market.
+Read CLAUDE.md and BACKLOG.md §1.2. Build a lightweight poller that scrapes the displayed Tomatometer score (just the integer) for each active movie every 1-5 minutes. Log timestamp + score. This detects review arrivals between the scraper's 50-minute runs and enables real-time lambda estimation.
+
+This does NOT need the full review page parse — just the displayed score number. Keep it simple: one script, one output format.
 ```
 
-**Prereqs:** Local DB dump (Prompt 1).
-
-### Prompt 7: Price trace anomaly detection (Backlog §2.11)
+### Prompt 3: Kalshi API client (Backlog §1.3)
 
 ```
-Read CLAUDE.md, BACKLOG.md §2.11, and brainstorm/brainstorm_market_strategies.md (price trace anomaly section). For resolved markets, identify price spikes that coincide with no new reviews in the DB. Measure mean reversion: how far and how fast do these spikes revert? This tells us whether "amateur spike" reversion is a real, exploitable pattern or just noise.
+Read CLAUDE.md and BACKLOG.md §1.3. Build a minimal Kalshi API client that fetches live prices for all RT Tomatometer markets. No order placement — just price retrieval. Output: for each movie, current price for each threshold. This is the foundation for comparing model output to market prices.
 ```
 
-**Prereqs:** Local DB dump (Prompt 1) for aligning price timestamps with review arrivals.
-
-### Prompt 8: Overdispersion check (Backlog §2.1)
-
-```
-Read CLAUDE.md and BACKLOG.md §2.1. Measure the actual variance of fresh counts in rolling windows across movies and compare to binomial prediction. Is sentiment overdispersion real and material, or is the binomial close enough? This determines whether beta-binomial is worth exploring. See SOURCES.md §3.1 and §4.
-```
-
-**Prereqs:** Local DB dump (Prompt 1).
-
-### Prompt 9: Diagnostic regression for hierarchical p_fresh (Backlog §2.6)
-
-```
-Read CLAUDE.md, BACKLOG.md §2.6, and brainstorm/brainstorm_hierarchical_p_fresh.md (Step 1: diagnostic regression). For each historical movie, compute p_pre (freshness rate in the pre-forecast window) and p_forecast (freshness rate in the forecast window). Fit a simple regression: p_forecast ~ f(p_pre, n_reviews). Plot the scatter. Does pre-forecast freshness predict forecast-window freshness? If it's a noisy mess, the hierarchical model isn't worth building.
-```
-
-**Prereqs:** Local DB dump (Prompt 1). Need 30-50+ movies with full review timelines. Also need to define forecast window boundaries.
+**Prereqs:** Kalshi API credentials and API docs.
 
 ---
 
-## Explorations — Deeper Dives (Conditional on Gut-Check Results)
+## Future Explorations (Deferred)
 
-### Prompt 10: Hierarchical Bayesian p_fresh model (Backlog §2.6, conditional)
+These prompts investigate ideas from the brainstorm phase. They're not blocking the betting function but may feed into parameter refinement later.
 
-```
-Read CLAUDE.md, BACKLOG.md §2.6, and brainstorm/brainstorm_hierarchical_p_fresh.md (Steps 2-3). The diagnostic regression (Prompt 9) showed signal — p_pre does predict p_forecast. Now build the hierarchical model: use the cross-movie regression as an informed Beta prior, update with the current movie's recent reviews via exponential forgetting. See the brainstorm doc for full design.
-```
-
-**Prereqs:** Prompt 9 must show a meaningful relationship.
-
-### Prompt 11: Review-integrity uncertainty (Backlog §2.7)
+### Volume-review count correlation (Backlog §5, market strategies)
 
 ```
-Read CLAUDE.md, BACKLOG.md §2.7, and brainstorm/brainstorm_review_integrity.md. Compare sentiment for the same reviews across multiple scrapes of tracked movies to estimate the empirical flip rate. Then run sensitivity analysis: perturb k reviews and measure how much model output changes. Almost certainly immaterial, but good to confirm.
+Read BACKLOG.md §5 (market-based strategies). Using the price history CSVs, compute minute-row count as an activity proxy. Correlate with total review count from reviews.csv. Is there structure? Can we predict total review count from early trading activity?
 ```
 
-**Prereqs:** Need multi-scrape data for tracked movies (already have this).
+### Embargo-lift divergence (Backlog §5, market strategies)
+
+```
+Read BACKLOG.md §5 and brainstorm/brainstorm_market_strategies.md (strategy 1). For resolved movies, compare the initial review basket (first 20 reviews) to the Kalshi market price. How often do they disagree, and who's right?
+```
+
+### Overdispersion check (Backlog §5, parameter refinement)
+
+```
+Read BACKLOG.md §5 (parameter refinement). Measure actual variance of fresh counts in rolling windows vs. binomial prediction. Is beta-binomial worth exploring, or is the binomial close enough?
+```
+
+### Hierarchical p_fresh diagnostic (Backlog §5, parameter refinement)
+
+```
+Read BACKLOG.md §5 and brainstorm/brainstorm_hierarchical_p_fresh.md. Fit p_forecast ~ f(p_pre, n_reviews) across historical movies. Does pre-forecast freshness predict forecast-window freshness?
+```
