@@ -27,7 +27,6 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ```
 ├── edge.py                     # Poisson-binomial betting function (core module)
 ├── pyproject.toml              # Dependencies (uv managed)
-├── .gitignore
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan → implement → validate)
 ├── BACKLOG.md                  # Priorities, ideas, infrastructure, platform mechanics
@@ -36,11 +35,12 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
-├── notebooks/                  # Exploration notebooks (historical — see §Exploration History)
-│   ├── dataset_survey.ipynb
-│   ├── misprice_backtest.ipynb
-│   ├── misprice_backtest_deep_dive.ipynb
-│   └── poisson_binomial_threshold.ipynb
+├── notebooks/                  # Exploration notebooks
+│   ├── parameter_exploration.ipynb  # Active: lambda + p_fresh estimator workspace
+│   ├── dataset_survey.ipynb         # Archived: broad dataset exploration
+│   ├── misprice_backtest.ipynb      # Archived: deterministic bounds backtest
+│   ├── misprice_backtest_deep_dive.ipynb  # Archived: clean-data movie deep dive
+│   └── poisson_binomial_threshold.ipynb   # Archived: original probability model
 ├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Strategy brainstorms (gitignored)
@@ -108,18 +108,20 @@ The Poisson-binomial betting function. Computes P(final score crosses threshold)
 **Usage:**
 ```bash
 uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
-# Example: uv run python edge.py the_drama 75 42 24
+uv run python edge.py the_drama 75 42 24                          # naive lambda + p_fresh from DB
+uv run python edge.py the_drama 75 42 24 --lambda 1.5 --p-fresh 0.72  # override with your own estimates
 ```
 
 **Components:**
-- `compute_edge()` — pure math, no I/O. Takes 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → returns edge_cents, p_yes, p_no. Uses binomial CDF shortcut per Poisson k-value.
-- `get_movie_state()` — queries the Neon PostgreSQL DB for current fresh/total counts per movie, computes lambda (reviews in last 6h / 6) and p_fresh (running average).
+- `compute_edge()` — pure math, no I/O. Takes 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → returns edge_cents, p_yes, p_no. Takes lambda and p_fresh as given; makes no assumptions about how they were estimated.
+- `get_movie_state()` — queries the Neon PostgreSQL DB for raw review counts: fresh/total overall and split by top/non-top critic, plus recent timestamps. Returns data only — no parameter estimation.
+- `naive_lambda()`, `naive_p_fresh()` — v1 default estimators (reviews in last 6h / 6, fresh/total). Placeholders for better estimators.
 
 **Resolution math:** "Above X" resolves Yes when `round(fresh/total * 100) >= X+1`, i.e., `fresh/total >= (X + 0.5) / 100`. See `brainstorm/brainstorm_rounding_and_resolution.md` for derivation and empirical confirmation.
 
 **Output:** `edge_cents = P(Yes) * 100 - market_price`. Positive = buy Yes is +EV, negative = buy No is +EV.
 
-**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable. v1 uses simple estimates (lambda = recent rate, p_fresh = running average). Refinements (cross-movie lambda, top-critic correction, time-varying rates) are in BACKLOG §3.
+**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable. v1 uses simple placeholders (lambda = recent rate, p_fresh = running average). The CLI accepts `--lambda` and `--p-fresh` overrides so you can plug in better estimates. See `notebooks/parameter_exploration.ipynb` for the workspace and BACKLOG §3 for refinement directions.
 
 **What was tried and why alternatives were abandoned:**
 - *Deterministic bounds (worst/best case from remaining reviews)*: Too conservative — by the time bounds lock the outcome, the market has already corrected. See `notebooks/misprice_backtest.ipynb` and `notebooks/misprice_backtest_deep_dive.ipynb`.
@@ -143,8 +145,11 @@ uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
 cd ~/Desktop/rt-analysis
 uv sync
 
-# Run the betting function
+# Run the betting function (naive defaults)
 DATABASE_URL="postgresql://..." uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
+
+# Run with custom parameter estimates
+DATABASE_URL="postgresql://..." uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> --lambda 1.5 --p-fresh 0.72
 
 # Launch notebooks (for exploration/backtesting)
 DATABASE_URL="postgresql://..." uv run jupyter notebook

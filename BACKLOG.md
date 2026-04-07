@@ -46,7 +46,7 @@ Ideas that survived gut-checks for improving lambda and p_fresh estimates. These
 - **Top-critic correction:** Early reviews overweight top critics who are ~6pp more negative. Adjust p_fresh accordingly.
 - **Overdispersion (beta-binomial):** If sentiment is clustered (not i.i.d.), the binomial underestimates variance. `brainstorm/brainstorm_poisson_binomial_threshold.md`
 
-**Status:** Not started. Prioritize after operational infrastructure (§1) is in place.
+**Status:** Infrastructure ready. `edge.py` decoupled (raw data fetch vs parameter estimation), CLI accepts `--lambda` / `--p-fresh` overrides, and `notebooks/parameter_exploration.ipynb` has the data loading, helpers, cross-movie arrival table, and edge trajectory tools for developing better estimators.
 
 ---
 

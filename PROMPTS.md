@@ -6,10 +6,10 @@ Handoff prompts for starting new conversations. Read CLAUDE.md and BACKLOG.md fo
 
 ## Context for All Prompts
 
-The Poisson-binomial betting function is built (`edge.py`). It computes edge in cents for "Above X" Kalshi RT bets given 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh). v1 uses simple parameter estimates: lambda = recent review rate, p_fresh = running average.
+The Poisson-binomial betting function is built (`edge.py`). It computes edge in cents for "Above X" Kalshi RT bets given 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh). The CLI accepts `--lambda` and `--p-fresh` overrides; without them, it falls back to naive defaults. `get_movie_state()` returns raw counts (fresh/total split by top/non-top critic + recent timestamps) — parameter estimation is decoupled.
 
 Key data notes:
-- The scraper runs every 50 minutes; `edge.py` queries the Neon PostgreSQL DB for live fresh/total counts.
+- The scraper runs every 50 minutes; `edge.py` queries the Neon PostgreSQL DB for live review counts.
 - 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near close).
 - Top critics are systematically ~6pp more negative — early review baskets overweight them.
 - Score ranges in `movies_index.csv` are fractions (e.g., 0.8750 = 87.5%). Price CSVs use tz-aware UTC timestamps and cents.
@@ -34,16 +34,10 @@ Read CLAUDE.md and BACKLOG.md §1.2. Build a minimal Kalshi API client that fetc
 
 **Prereqs:** Kalshi API credentials and API docs.
 
-### Prompt 3: Parameter refinement — lambda (Backlog §3)
+### Prompt 3: Parameter refinement (Backlog §3)
 
 ```
-Read CLAUDE.md, BACKLOG.md §3, and brainstorm/brainstorm_cross_movie_lambda.md. The current lambda estimate in edge.py is "reviews in last 6h / 6" — a flat recent rate. Investigate whether cross-movie historical review rates can produce a better lambda estimate. Use the 141 resolved movies as training data.
-```
-
-### Prompt 4: Parameter refinement — p_fresh (Backlog §3)
-
-```
-Read CLAUDE.md, BACKLOG.md §3, and brainstorm/brainstorm_hierarchical_p_fresh.md. The current p_fresh estimate in edge.py is the running average (fresh/total). Investigate whether a hierarchical model (cross-movie regression of final vs. early freshness rate) improves the estimate. Also consider top-critic correction (~6pp more negative).
+Read CLAUDE.md and BACKLOG.md §3. The betting function (edge.py) takes lambda_rate and p_fresh as inputs. The CLI accepts --lambda and --p-fresh overrides. The current defaults are naive placeholders (recent rate, running average). notebooks/parameter_exploration.ipynb has data loading, cross-movie arrival curves, snapshot helpers, and edge trajectory tools already set up. Open the notebook and continue developing better estimators. See brainstorm/ for approach ideas.
 ```
 
 ---
