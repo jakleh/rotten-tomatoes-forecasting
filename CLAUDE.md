@@ -20,11 +20,12 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 4. **Iterate 1-3** until concepts survive the gut-checks.
 5. **Formalize** the survivors into modular functions. By this point the ideas are crystal clear, so the math is just implementation.
 
-**Current phase:** Step 5 — formalizing the Poisson-binomial betting function. The dataset is built, observations are done, the surviving approach has been identified.
+**Current phase:** Step 5 complete for v1. The Poisson-binomial betting function is built (`edge.py`). Now refining parameters (lambda, p_fresh) and building operational infrastructure (score polling, Kalshi API).
 
 ## File Structure
 
 ```
+├── edge.py                     # Poisson-binomial betting function (core module)
 ├── pyproject.toml              # Dependencies (uv managed)
 ├── .gitignore
 ├── CLAUDE.md                   # This file
@@ -35,11 +36,11 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
-├── notebooks/
-│   ├── dataset_survey.ipynb               # Broad survey of the joint dataset (complete)
-│   ├── misprice_backtest.ipynb            # Systematic misprice backtest — bounds approach (complete)
-│   ├── misprice_backtest_deep_dive.ipynb  # Deep dive on clean-data movies (complete)
-│   └── poisson_binomial_threshold.ipynb   # Original Poisson-binomial model exploration
+├── notebooks/                  # Exploration notebooks (historical — see §Exploration History)
+│   ├── dataset_survey.ipynb
+│   ├── misprice_backtest.ipynb
+│   ├── misprice_backtest_deep_dive.ipynb
+│   └── poisson_binomial_threshold.ipynb
 ├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Strategy brainstorms (gitignored)
@@ -100,36 +101,40 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 - **Scrape frequency**: Every 50 minutes. Reviews with relative timestamps ("5m", "3h") get more precise `estimated_timestamp` values than date-format ones ("Mar 20").
 - **Movies tracked**: Configured in the scraper's `movies.json`. All ~141 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`.
 
-## Approach: Poisson-Binomial Betting Function
+## Core Module: `edge.py`
 
-The surviving approach after exploration: a **Poisson-binomial model** that computes the probability of a movie's final score crossing a Kalshi threshold, given accumulated reviews and expected future review arrivals.
+The Poisson-binomial betting function. Computes P(final score crosses threshold) and the expected edge in cents for an "Above X" Kalshi RT bet.
 
-**Inputs (7):** threshold, market price, current fresh count, current total count, time until close, lambda (review arrival rate), p_fresh (success rate).
+**Usage:**
+```bash
+uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
+# Example: uv run python edge.py the_drama 75 42 24
+```
 
-**Output:** Edge in cents = expected profit per contract. Positive = bet, negative = pass.
+**Components:**
+- `compute_edge()` — pure math, no I/O. Takes 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → returns edge_cents, p_yes, p_no. Uses binomial CDF shortcut per Poisson k-value.
+- `get_movie_state()` — queries the Neon PostgreSQL DB for current fresh/total counts per movie, computes lambda (reviews in last 6h / 6) and p_fresh (running average).
+
+**Resolution math:** "Above X" resolves Yes when `round(fresh/total * 100) >= X+1`, i.e., `fresh/total >= (X + 0.5) / 100`. See `brainstorm/brainstorm_rounding_and_resolution.md` for derivation and empirical confirmation.
+
+**Output:** `edge_cents = P(Yes) * 100 - market_price`. Positive = buy Yes is +EV, negative = buy No is +EV.
+
+**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable. v1 uses simple estimates (lambda = recent rate, p_fresh = running average). Refinements (cross-movie lambda, top-critic correction, time-varying rates) are in BACKLOG §3.
 
 **What was tried and why alternatives were abandoned:**
 - *Deterministic bounds (worst/best case from remaining reviews)*: Too conservative — by the time bounds lock the outcome, the market has already corrected. See `notebooks/misprice_backtest.ipynb` and `notebooks/misprice_backtest_deep_dive.ipynb`.
-- *Market-price-only strategies (spike detection, anomaly reversion)*: Interesting ideas in `brainstorm/brainstorm_market_strategies.md` but require the structural model first to define "fair value."
-
-**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable. These start simple (lambda = recent review rate, p_fresh = running average) and get refined with cross-movie data, top-critic correction, time-varying rates, etc. See `brainstorm/` for refinement ideas.
+- *Market-price-only strategies (spike detection, anomaly reversion)*: Require the structural model first to define "fair value." See `brainstorm/brainstorm_market_strategies.md`.
 
 ## Backlog & Strategy
 
 `BACKLOG.md` has the full priority list. `PROMPTS.md` has handoff prompts for new conversations. `SOURCES.md` lists data and literature to gather.
 
-**Current state:** Dataset is built (reviews.csv, movies_index.csv, ~141 price histories). Three exploration notebooks complete (dataset survey, misprice backtest, deep dive). The Poisson-binomial approach has survived gut-checks. Now formalizing.
+**Current state:** Betting function v1 is built (`edge.py`). Dataset is complete (reviews.csv, movies_index.csv, ~141 price histories). Four exploration notebooks archived. Now building operational infrastructure and refining model parameters.
 
-**What we learned from exploration:**
-- 23/141 movies had clear misprices (median 57¢ edge) — the opportunity is real and not volume-dependent.
-- Deterministic bounds approach was too conservative — max 7¢ edge on clean-data movies. The market corrects before bounds can prove it wrong.
-- 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near close). Only movies with minute-level late-window timestamps are reliable for boundary analysis.
-- Conclusion: a *probabilistic* approach is needed to capture edges before the market self-corrects.
-
-**Recommended next steps (in order):**
-1. **Build the betting function.** Poisson-binomial model: 7 inputs → edge in cents. Fresh/total counts come from the existing scraper's DB. Lambda and p_fresh start simple.
-2. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). Needed for real-time lambda estimation and future backtesting.
-3. **Kalshi API client.** Fetch live prices for automated comparison. Foundation for the eventual execution pipeline.
+**Next steps (in order):**
+1. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). Needed for real-time lambda estimation and future backtesting.
+2. **Kalshi API client.** Fetch live prices for automated comparison. Foundation for the eventual execution pipeline.
+3. **Parameter refinement.** Cross-movie lambda, top-critic correction, time-varying p_fresh. See BACKLOG §3.
 
 ## How to Run
 
@@ -138,7 +143,10 @@ The surviving approach after exploration: a **Poisson-binomial model** that comp
 cd ~/Desktop/rt-analysis
 uv sync
 
-# Launch notebook
+# Run the betting function
+DATABASE_URL="postgresql://..." uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
+
+# Launch notebooks (for exploration/backtesting)
 DATABASE_URL="postgresql://..." uv run jupyter notebook
 ```
 

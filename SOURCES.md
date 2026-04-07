@@ -24,7 +24,7 @@ Resolved 2026-04-05. "Above X" = displayed score >= X+1. Snapshot at 10:00 AM ET
 
 ### 1.5 Kalshi API — order placement [GATHER]
 **What to find:** Order placement endpoints, authentication, rate limits, paper trading environment.
-**Why it matters:** Automated execution pipeline (Backlog §1.3, future).
+**Why it matters:** Automated execution pipeline (Backlog §1.2, future).
 **Where to look:** Kalshi API docs.
 
 ---
