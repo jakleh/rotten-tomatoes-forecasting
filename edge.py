@@ -6,10 +6,12 @@ review counts, estimated review arrival rate, and freshness probability.
 
 Usage:
     uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> [--lambda RATE] [--p-fresh PROB]
+    uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> --kde [--shrinkage-k K] [--n-prior N]
 
 Example:
     uv run python edge.py the_drama 75 42 24
     uv run python edge.py the_drama 75 42 24 --lambda 1.5 --p-fresh 0.72
+    uv run python edge.py the_drama 75 42 24 --kde
 """
 
 import argparse
@@ -17,6 +19,7 @@ import math
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from scipy.stats import binom, poisson
 from sqlalchemy import create_engine, text
@@ -242,45 +245,126 @@ def naive_p_fresh(fresh_count: int, total_count: int) -> float:
 def main():
     parser = argparse.ArgumentParser(
         description="Compute edge for a Kalshi RT Tomatometer bet.",
-        usage="uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> [--lambda RATE] [--p-fresh PROB]",
+        usage=(
+            "uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> "
+            "[--lambda RATE] [--p-fresh PROB] [--kde]"
+        ),
     )
     parser.add_argument("movie_slug", help="Movie identifier (e.g. the_drama)")
     parser.add_argument("threshold", type=int, help="Kalshi threshold (e.g. 75 for 'Above 75')")
     parser.add_argument("market_price", type=float, help="Current market price in cents (0-100)")
     parser.add_argument("hours_to_close", type=float, help="Hours remaining until bet close")
     parser.add_argument("--lambda", dest="lambda_rate", type=float, default=None,
-                        help="Override lambda_rate (reviews/hr). If omitted, estimated from DB.")
+                        help="Override lambda_rate (reviews/hr). Takes precedence over --kde.")
     parser.add_argument("--p-fresh", dest="p_fresh", type=float, default=None,
-                        help="Override p_fresh (0-1). If omitted, estimated from DB.")
+                        help="Override p_fresh (0-1). Takes precedence over --kde.")
+    parser.add_argument("--kde", action="store_true",
+                        help="Use per-critic KDE model for lambda/p_fresh estimation.")
+    parser.add_argument("--shrinkage-k", type=float, default=3.0,
+                        help="KDE shrinkage parameter (default 3.0). Only with --kde.")
+    parser.add_argument("--n-prior", type=float, default=20.0,
+                        help="p_fresh prior sample size (default 20.0). Only with --kde.")
+    parser.add_argument("--training-slugs", nargs="+", default=None,
+                        help="Override training movie slugs. Only with --kde.")
 
     args = parser.parse_args()
 
-    state = get_movie_state(args.movie_slug)
+    if args.kde:
+        import pandas as pd
+        from critic_model import (
+            build_critic_profiles,
+            build_kde_lambda_model,
+            default_training_slugs,
+            estimate_lambda,
+            estimate_p_fresh,
+            get_observed_critics,
+        )
 
-    lambda_rate = args.lambda_rate if args.lambda_rate is not None else naive_lambda(state["recent_timestamps"])
-    p_fresh = args.p_fresh if args.p_fresh is not None else naive_p_fresh(state["fresh_count"], state["total_count"])
+        root = Path(__file__).parent
+
+        # Load data
+        reviews_df = pd.read_csv(root / "reviews.csv")
+        reviews_df["estimated_timestamp"] = pd.to_datetime(
+            reviews_df["estimated_timestamp"], format="ISO8601", utc=True
+        )
+        movies_df = pd.read_csv(root / "movies_index.csv")
+        movies_df["Bet Close Date"] = pd.to_datetime(
+            movies_df["Bet Close Date"], utc=True
+        )
+
+        # Training slugs
+        if args.training_slugs:
+            training_slugs = args.training_slugs
+        else:
+            training_slugs = default_training_slugs(movies_df, exclude_slug=args.movie_slug)
+
+        # Build model
+        profiles = build_critic_profiles(reviews_df, movies_df, training_slugs)
+        model = build_kde_lambda_model(profiles, shrinkage_k=args.shrinkage_k)
+
+        # Get observed state from DB
+        observed_critics, fresh_count, total_count, first_ts = get_observed_critics(
+            args.movie_slug
+        )
+
+        if total_count == 0:
+            print(f"No reviews found for '{args.movie_slug}' in DB.", file=sys.stderr)
+            sys.exit(1)
+
+        # Compute time parameters
+        days_before_close = args.hours_to_close / 24
+        first_review_dbc = None
+        if first_ts is not None:
+            close_time = datetime.now(timezone.utc) + timedelta(hours=args.hours_to_close)
+            first_review_dbc = (close_time - first_ts).total_seconds() / 86400
+
+        # Estimate parameters (manual overrides take precedence)
+        kde_lambda = estimate_lambda(
+            model, days_before_close, args.hours_to_close,
+            observed_critics, observed_count=total_count, first_review_dbc=first_review_dbc,
+        )
+        kde_p_fresh = estimate_p_fresh(
+            profiles, observed_critics, fresh_count, total_count, n_prior=args.n_prior,
+        )
+
+        lambda_rate = args.lambda_rate if args.lambda_rate is not None else kde_lambda
+        p_fresh = args.p_fresh if args.p_fresh is not None else kde_p_fresh
+
+        lambda_source = "override" if args.lambda_rate is not None else "KDE model"
+        p_fresh_source = "override" if args.p_fresh is not None else "KDE model"
+
+    else:
+        state = get_movie_state(args.movie_slug)
+        fresh_count = state["fresh_count"]
+        total_count = state["total_count"]
+
+        lambda_rate = args.lambda_rate if args.lambda_rate is not None else naive_lambda(state["recent_timestamps"])
+        p_fresh = args.p_fresh if args.p_fresh is not None else naive_p_fresh(fresh_count, total_count)
+
+        lambda_source = "override" if args.lambda_rate is not None else "naive (last 6h)"
+        p_fresh_source = "override" if args.p_fresh is not None else "naive (fresh/total)"
 
     result = compute_edge(
         threshold=args.threshold,
         market_price=args.market_price,
-        fresh_count=state["fresh_count"],
-        total_count=state["total_count"],
+        fresh_count=fresh_count,
+        total_count=total_count,
         hours_to_close=args.hours_to_close,
         lambda_rate=lambda_rate,
         p_fresh=p_fresh,
     )
 
     # Display
-    current_score_pct = state["fresh_count"] / state["total_count"] * 100
+    current_score_pct = fresh_count / total_count * 100
     displayed_score = round(current_score_pct)
 
-    lambda_source = "override" if args.lambda_rate is not None else "naive (last 6h)"
-    p_fresh_source = "override" if args.p_fresh is not None else "naive (fresh/total)"
-
     print(f"Movie           : {args.movie_slug}")
-    print(f"Score           : {displayed_score}% ({state['fresh_count']}/{state['total_count']})")
-    print(f"  Top critics   : {state['top_fresh']}/{state['top_total']} fresh")
-    print(f"  Non-top       : {state['nontop_fresh']}/{state['nontop_total']} fresh")
+    print(f"Score           : {displayed_score}% ({fresh_count}/{total_count})")
+    if not args.kde:
+        print(f"  Top critics   : {state['top_fresh']}/{state['top_total']} fresh")
+        print(f"  Non-top       : {state['nontop_fresh']}/{state['nontop_total']} fresh")
+    else:
+        print(f"  Critics seen  : {len(observed_critics)}")
     print(f"Threshold       : Above {args.threshold} (resolves Yes if displayed >= {args.threshold + 1})")
     print(f"Market price    : {args.market_price:.0f}c")
     print(f"Hours to close  : {args.hours_to_close:.1f}")

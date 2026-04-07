@@ -1,0 +1,413 @@
+"""
+Per-critic KDE lambda model for estimating review arrival rates and fresh probabilities.
+
+Architecture: three independent layers sharing a data foundation.
+  Layer 1: CriticProfiles -- base_rate, fresh_rate, timing_data per critic
+  Layer 2: KDELambdaModel -- fits KDEs to timing data, estimates remaining reviews
+  Layer 3: estimate_p_fresh -- weighted average of fresh rates, no KDEs
+
+See plans/plan_critic_kde_lambda.md for the full design.
+"""
+
+import os
+from dataclasses import dataclass, field
+
+import numpy as np
+import pandas as pd
+from scipy.stats import gaussian_kde
+from sqlalchemy import create_engine, text
+
+
+# -- Data structures -----------------------------------------------------------
+
+
+@dataclass
+class CriticProfiles:
+    """Per-critic base rates, fresh rates, and timing data. Shared data layer.
+
+    df columns: reviewer_name, base_rate, fresh_rate, timing_data (list), n_reviews
+    """
+
+    df: pd.DataFrame
+    training_slug_count: int
+
+
+@dataclass
+class KDELambdaModel:
+    """KDE-based lambda estimator. Built once from CriticProfiles, evaluated many times.
+
+    critic_kdes: {name: {'empirical': gaussian_kde | None, 'n': int, 'k': float}}
+    """
+
+    profiles: CriticProfiles
+    population_prior: gaussian_kde
+    critic_kdes: dict
+    shrinkage_k: float
+    bandwidth_floor: float
+
+
+# -- Layer 1: Critic profiles -------------------------------------------------
+
+
+def build_critic_profiles(
+    reviews_df: pd.DataFrame,
+    movies_df: pd.DataFrame,
+    training_slugs: list[str],
+) -> CriticProfiles:
+    """Build critic profiles from training set. No KDEs -- just base rates, fresh rates, timing data."""
+    n_movies = len(training_slugs)
+
+    # Filter reviews to training slugs
+    train = reviews_df[reviews_df["movie_slug"].isin(training_slugs)].copy()
+
+    # Join bet close date and compute days before close
+    close_map = movies_df.set_index("Slug")["Bet Close Date"]
+    train["bet_close"] = train["movie_slug"].map(close_map)
+    train["days_before_close"] = (
+        train["bet_close"] - train["estimated_timestamp"]
+    ).dt.total_seconds() / 86400
+
+    # Keep only reviews before close (dbc > 0)
+    train = train[train["days_before_close"] > 0]
+
+    # Per-critic stats
+    rows = []
+    for name, group in train.groupby("reviewer_name"):
+        movies_reviewed = group["movie_slug"].nunique()
+        fresh = (group["tomatometer_sentiment"] == "positive").sum()
+        total = len(group)
+        timing = group["days_before_close"].values.tolist()
+
+        rows.append(
+            {
+                "reviewer_name": name,
+                "base_rate": movies_reviewed / n_movies,
+                "fresh_rate": fresh / total if total > 0 else 0.5,
+                "timing_data": timing,
+                "n_reviews": total,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+
+    # Sanity checks
+    sum_base = df["base_rate"].sum()
+    mean_reviews = train.groupby("movie_slug").size().mean()
+    print(f"[profiles] {len(df)} critics, {n_movies} training movies")
+    print(f"[profiles] sum(base_rate)={sum_base:.1f}, mean reviews/movie={mean_reviews:.1f}")
+    print(
+        f"[profiles] fresh_rate: median={df['fresh_rate'].median():.3f}, "
+        f"mean={df['fresh_rate'].mean():.3f}"
+    )
+
+    return CriticProfiles(df=df, training_slug_count=n_movies)
+
+
+# -- Layer 2: KDE lambda model ------------------------------------------------
+
+
+def _fit_population_prior(all_timing_data: np.ndarray) -> gaussian_kde:
+    """Fit a single KDE to ALL reviews across ALL critics. The fallback shape."""
+    return gaussian_kde(all_timing_data)
+
+
+def _fit_critic_kde(
+    timing_data: np.ndarray,
+    population_prior: gaussian_kde,
+    shrinkage_k: float,
+    bandwidth_floor: float,
+) -> dict:
+    """Fit one critic's KDE with shrinkage toward population prior.
+
+    Returns dict: {'empirical': gaussian_kde | None, 'n': int, 'k': float}.
+    - 0-1 reviews or zero variance: empirical=None (fallback to population prior)
+    - 2+ reviews with variance: empirical KDE with bandwidth floor enforced
+    """
+    n = len(timing_data)
+    result = {"empirical": None, "n": n, "k": shrinkage_k}
+
+    if n < 2:
+        return result
+
+    if timing_data.std() == 0:
+        return result
+
+    try:
+        kde = gaussian_kde(timing_data)
+        # Enforce bandwidth floor
+        effective_bw = kde.factor * timing_data.std()
+        if effective_bw < bandwidth_floor:
+            kde.set_bandwidth(bandwidth_floor / timing_data.std())
+        result["empirical"] = kde
+    except np.linalg.LinAlgError:
+        pass  # Degenerate covariance -- fall back to population prior
+
+    return result
+
+
+def build_kde_lambda_model(
+    profiles: CriticProfiles,
+    shrinkage_k: float = 3.0,
+    bandwidth_floor: float = 0.5,
+) -> KDELambdaModel:
+    """Fit KDEs to timing data from critic profiles. Returns a model that can estimate lambda."""
+    # Pool all timing data for population prior
+    all_timing = np.concatenate(profiles.df["timing_data"].values)
+    population_prior = _fit_population_prior(all_timing)
+
+    # Fit per-critic KDEs
+    critic_kdes = {}
+    n_empirical = 0
+    n_fallback_sparse = 0
+    n_fallback_degenerate = 0
+
+    for _, row in profiles.df.iterrows():
+        timing = np.array(row["timing_data"])
+        entry = _fit_critic_kde(timing, population_prior, shrinkage_k, bandwidth_floor)
+        critic_kdes[row["reviewer_name"]] = entry
+
+        if entry["empirical"] is not None:
+            n_empirical += 1
+        elif len(timing) < 2:
+            n_fallback_sparse += 1
+        else:
+            n_fallback_degenerate += 1
+
+    # Population prior peak (for sanity check)
+    t_grid = np.linspace(0, 30, 300)
+    peak_t = t_grid[np.argmax(population_prior(t_grid))]
+
+    print(
+        f"[kde] {n_empirical} empirical KDEs, "
+        f"{n_fallback_sparse} sparse fallback, "
+        f"{n_fallback_degenerate} degenerate fallback"
+    )
+    print(f"[kde] population prior peak ~{peak_t:.1f}d before close")
+
+    return KDELambdaModel(
+        profiles=profiles,
+        population_prior=population_prior,
+        critic_kdes=critic_kdes,
+        shrinkage_k=shrinkage_k,
+        bandwidth_floor=bandwidth_floor,
+    )
+
+
+# -- Lambda estimation ---------------------------------------------------------
+
+
+def _blended_integral(
+    critic_entry: dict,
+    population_prior: gaussian_kde,
+    a: float,
+    b: float,
+    pop_integral: float | None = None,
+) -> float:
+    """Compute blended KDE integral from a to b.
+
+    For critics with empirical KDEs: (n/(n+k)) * empirical + (k/(n+k)) * population.
+    For fallback critics: population prior only.
+
+    If pop_integral is provided, skip recomputing it (optimization for batch calls).
+    """
+    if pop_integral is None:
+        pop_integral = population_prior.integrate_box_1d(a, b)
+
+    empirical = critic_entry["empirical"]
+    if empirical is None:
+        return pop_integral
+
+    n = critic_entry["n"]
+    k = critic_entry["k"]
+    w_emp = n / (n + k)
+    w_pop = k / (n + k)
+    return w_emp * empirical.integrate_box_1d(a, b) + w_pop * pop_integral
+
+
+def _compute_scaling(
+    model: KDELambdaModel,
+    days_before_close: float,
+    observed_count: int,
+    first_review_dbc: float,
+) -> float:
+    """Compute observed/expected scaling factor.
+
+    expected_so_far = sum of w_i * integral(kde_i, days_before_close, first_review_dbc)
+    for ALL critics (not just unreviewed -- we compare to what the model predicted).
+
+    Guard rails: if expected < 40, return 1.0; clamp to [0.5, 2.0].
+    Threshold raised from 5→40 and clamp tightened from [0.3,3.0]→[0.5,2.0]
+    after validation showed scaling overcorrects at T-7d where expected_so_far
+    is based on KDE tail mass and the ratio is unreliable.
+    """
+    pop_integral = model.population_prior.integrate_box_1d(
+        days_before_close, first_review_dbc
+    )
+
+    expected_so_far = 0.0
+    for _, row in model.profiles.df.iterrows():
+        w = row["base_rate"]
+        entry = model.critic_kdes.get(row["reviewer_name"])
+        if entry is None:
+            continue
+        integral = _blended_integral(
+            entry, model.population_prior, days_before_close, first_review_dbc,
+            pop_integral=pop_integral,
+        )
+        expected_so_far += w * integral
+
+    if expected_so_far < 40.0:
+        return 1.0
+
+    scaling = observed_count / expected_so_far
+    return max(0.5, min(2.0, scaling))
+
+
+def estimate_lambda(
+    model: KDELambdaModel,
+    days_before_close: float,
+    hours_to_close: float,
+    observed_critics: set[str],
+    observed_count: int | None = None,
+    first_review_dbc: float | None = None,
+) -> float:
+    """Estimate lambda_rate (reviews/hour) at the given time.
+
+    1. Sum w_i * blended_integral(kde_i, 0, days_before_close) for unreviewed critics
+       -> expected remaining reviews.
+    2. If observed_count and first_review_dbc provided, scale by observed/expected ratio.
+    3. Divide by hours_to_close -> reviews/hour for compute_edge().
+
+    Note: first_review_dbc was added to the plan's signature to support _compute_scaling().
+    The plan's _compute_scaling() requires it but the original estimate_lambda() signature
+    omitted it.
+    """
+    if hours_to_close <= 0 or days_before_close <= 0:
+        return 0.0
+
+    # Precompute population prior integral for remaining window [0, dbc]
+    pop_integral = model.population_prior.integrate_box_1d(0, days_before_close)
+
+    expected_remaining = 0.0
+    for _, row in model.profiles.df.iterrows():
+        name = row["reviewer_name"]
+        if name in observed_critics:
+            continue
+
+        w = row["base_rate"]
+        entry = model.critic_kdes.get(name)
+        if entry is None:
+            continue
+
+        integral = _blended_integral(
+            entry, model.population_prior, 0, days_before_close,
+            pop_integral=pop_integral,
+        )
+        expected_remaining += w * integral
+
+    if expected_remaining <= 0:
+        return 0.0
+
+    # Scale by observed/expected ratio if live data provided
+    if observed_count is not None and first_review_dbc is not None:
+        scaling = _compute_scaling(
+            model, days_before_close, observed_count, first_review_dbc
+        )
+        expected_remaining *= scaling
+
+    return expected_remaining / hours_to_close
+
+
+# -- Layer 3: p_fresh estimation -----------------------------------------------
+
+
+def estimate_p_fresh(
+    profiles: CriticProfiles,
+    observed_critics: set[str],
+    fresh_count: int,
+    total_count: int,
+    n_prior: float = 20.0,
+) -> float:
+    """Estimate p_fresh by blending critic-weighted prior with observed rate.
+
+    No KDEs involved. Uses critic profiles only for base_rate and fresh_rate.
+    Weighted by base_rate so critics more likely to review get more influence.
+    """
+    df = profiles.df
+    remaining = df[~df["reviewer_name"].isin(observed_critics)]
+
+    weight_sum = remaining["base_rate"].sum()
+    if weight_sum > 0:
+        prior_p_fresh = (
+            (remaining["base_rate"] * remaining["fresh_rate"]).sum() / weight_sum
+        )
+    else:
+        prior_p_fresh = 0.65  # reasonable default if no remaining critics known
+
+    if total_count == 0:
+        return prior_p_fresh
+
+    observed_p_fresh = fresh_count / total_count
+    blend_weight = total_count / (total_count + n_prior)
+    return blend_weight * observed_p_fresh + (1 - blend_weight) * prior_p_fresh
+
+
+# -- DB query ------------------------------------------------------------------
+
+
+def get_observed_critics(
+    movie_slug: str,
+    engine=None,
+) -> tuple[set[str], int, int, object]:
+    """Query DB for the target movie's per-critic reviews.
+
+    Returns (critic_names, fresh_count, total_count, first_review_timestamp).
+    first_review_timestamp is the earliest estimated_timestamp (datetime or None).
+
+    Extended from plan's 3-tuple to include first_review_timestamp for scaling.
+    """
+    if engine is None:
+        database_url = os.environ["DATABASE_URL"]
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        engine = create_engine(database_url)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT reviewer_name, tomatometer_sentiment, estimated_timestamp
+                FROM reviews
+                WHERE movie_slug = :slug
+            """),
+            {"slug": movie_slug},
+        ).fetchall()
+
+    if not rows:
+        return set(), 0, 0, None
+
+    critic_names = {row.reviewer_name for row in rows}
+    total_count = len(rows)
+    fresh_count = sum(1 for row in rows if row.tomatometer_sentiment == "positive")
+    first_ts = min(row.estimated_timestamp for row in rows)
+
+    return critic_names, fresh_count, total_count, first_ts
+
+
+# -- Convenience: default training slugs --------------------------------------
+
+
+def default_training_slugs(
+    movies_df: pd.DataFrame,
+    exclude_slug: str | None = None,
+    n: int = 20,
+) -> list[str]:
+    """Select the most recent n resolved movies by Bet Close Date, excluding the target.
+
+    Filters to movies with Bet Close Date in the past (resolved only).
+    """
+    now = pd.Timestamp.now(tz="UTC")
+    candidates = movies_df.dropna(subset=["Bet Close Date"])
+    candidates = candidates[candidates["Bet Close Date"] < now]
+    if exclude_slug is not None:
+        candidates = candidates[candidates["Slug"] != exclude_slug]
+    return candidates.nlargest(n, "Bet Close Date")["Slug"].tolist()

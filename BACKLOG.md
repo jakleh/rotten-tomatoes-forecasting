@@ -38,15 +38,25 @@ Fetch live prices for all RT markets. No order placement — just price retrieva
 
 ## 3. Parameter Refinement (Feeds into §2)
 
-Ideas that survived gut-checks for improving lambda and p_fresh estimates. These are the primary lever for improving the betting function's accuracy.
+### 3.1 Per-critic KDE lambda model — **Complete**
 
-- **Cross-movie lambda:** Use historical movies' review rates to predict this movie's rate. `brainstorm/brainstorm_cross_movie_lambda.md`
-- **Hierarchical p_fresh:** Use cross-movie regression as a prior for freshness rate. `brainstorm/brainstorm_hierarchical_p_fresh.md`
+Replace naive lambda and p_fresh with a per-critic KDE model. Every critic gets a KDE fitted to their historical review timing (days before close), weighted by their base rate (movies reviewed / total movies). Lambda = sum of weighted KDE integrals for unreviewed critics. p_fresh = weighted average of per-critic fresh rates blended with the movie's running observed rate. Real-time scaling via observed/expected ratio.
+
+**Status: Complete.** Implemented in `critic_model.py`. Integrated into `edge.py` via `--kde` flag. Validation notebook at `notebooks/critic_model_validation.ipynb`.
+
+**Key design decisions (2026-04-07):**
+- Build KDEs for ALL critics (not just "active" ones). Long-tail critics self-average into a smooth background rate.
+- Scale lambda in real-time via observed/expected ratio. No pre-market predictor (Kalshi window R²=0.058, raw day-1 count R²=0.312 — neither sufficient).
+- `compute_edge()` interface unchanged — aggregate to scalar lambda + p_fresh.
+- Population prior + shrinkage (k=3) for sparse/degenerate KDEs. Bandwidth floor 0.5d.
+
+### 3.2 Other refinement ideas (deferred)
+
 - **Time-varying p_fresh:** Freshness rate may shift over a movie's lifecycle. `brainstorm/brainstorm_time_varying_p_fresh.md`
 - **Top-critic correction:** Early reviews overweight top critics who are ~6pp more negative. Adjust p_fresh accordingly.
 - **Overdispersion (beta-binomial):** If sentiment is clustered (not i.i.d.), the binomial underestimates variance. `brainstorm/brainstorm_poisson_binomial_threshold.md`
 
-**Status:** Infrastructure ready. `edge.py` decoupled (raw data fetch vs parameter estimation), CLI accepts `--lambda` / `--p-fresh` overrides, and `notebooks/parameter_exploration.ipynb` has the data loading, helpers, cross-movie arrival table, and edge trajectory tools for developing better estimators.
+**Note:** Cross-movie lambda (`brainstorm_cross_movie_lambda.md`) and hierarchical p_fresh (`brainstorm_hierarchical_p_fresh.md`) are superseded by the per-critic KDE model, which handles both.
 
 ---
 
@@ -151,6 +161,7 @@ Ideas from brainstorming that survived initial gut-checks but are not the curren
 | 2.1 | Poisson-binomial betting function | Very High | Medium | **Complete** |
 | 1.1 | High-frequency score polling | High | Medium | **Next build** |
 | 1.2 | Kalshi API client | High | Low-Medium | Not started (needs credentials) |
-| 3.x | Parameter refinement (lambda, p_fresh) | High | Ongoing | After §1 |
+| 3.1 | Per-critic KDE lambda model | Very High | Medium-High | **Complete** |
+| 3.2 | Other parameter refinements | Medium | Ongoing | After §3.1 |
 | 5.1 | Kalshi fee schedule | Medium | Low | Open |
 | 7.x | Backtesting framework (probabilistic) | Very High | Medium | After §1 |

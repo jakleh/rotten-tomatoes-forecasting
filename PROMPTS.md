@@ -6,13 +6,16 @@ Handoff prompts for starting new conversations. Read CLAUDE.md and BACKLOG.md fo
 
 ## Context for All Prompts
 
-The Poisson-binomial betting function is built (`edge.py`). It computes edge in cents for "Above X" Kalshi RT bets given 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh). The CLI accepts `--lambda` and `--p-fresh` overrides; without them, it falls back to naive defaults. `get_movie_state()` returns raw counts (fresh/total split by top/non-top critic + recent timestamps) — parameter estimation is decoupled.
+The Poisson-binomial betting function (`edge.py`) and per-critic KDE model (`critic_model.py`) are built. `edge.py` computes edge in cents for "Above X" Kalshi RT bets given 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh). The `--kde` flag uses per-critic KDE-based lambda and p_fresh estimates. Manual `--lambda` and `--p-fresh` overrides always take precedence.
+
+`critic_model.py` has three layers: (1) CriticProfiles — per-critic base_rate, fresh_rate, timing_data; (2) KDELambdaModel — Gaussian KDEs per critic with population prior + shrinkage (k=3, bw floor 0.5d), lambda = sum of weighted KDE integrals for unreviewed critics, optional observed/expected scaling; (3) estimate_p_fresh — base_rate-weighted average of remaining critic fresh rates blended with observed rate.
 
 Key data notes:
 - The scraper runs every 50 minutes; `edge.py` queries the Neon PostgreSQL DB for live review counts.
 - 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near close).
 - Top critics are systematically ~6pp more negative — early review baskets overweight them.
 - Score ranges in `movies_index.csv` are fractions (e.g., 0.8750 = 87.5%). Price CSVs use tz-aware UTC timestamps and cents.
+- 98% of review timestamps are day-level resolution. Use `format='ISO8601'` for reviews.csv, `utc=True` for price CSVs.
 
 ---
 
@@ -34,34 +37,47 @@ Read CLAUDE.md and BACKLOG.md §1.2. Build a minimal Kalshi API client that fetc
 
 **Prereqs:** Kalshi API credentials and API docs.
 
-### Prompt 3: Per-critic KDE lambda model (Backlog §3, brainstorm/brainstorm_critic_kde_lambda.md)
+### Prompt 3: Per-critic KDE lambda model ~~— review plan and implement~~ (COMPLETE)
+
+Implemented in `critic_model.py`. Validated in `notebooks/critic_model_validation.ipynb`. Findings in `findings/critic_kde_model_validation.md`. See BACKLOG §3.1.
+
+### Prompt 5: KDE model backtest — review plan and implement (Backlog §7)
 
 ```
-Read CLAUDE.md, BACKLOG.md §3, and brainstorm/brainstorm_critic_kde_lambda.md (the full writeup including the original conversation transcript).
+Read these files in order before doing anything:
+1. CLAUDE.md (project overview, conventions, file structure, how to run things)
+2. PROTOCOL.md (plan → implement → validate workflow)
+3. plans/plan_kde_backtest.md (the backtest plan — this is your spec)
+4. findings/critic_kde_model_validation.md (model validation results — understand what the model gets right and wrong before backtesting its P&L)
+5. edge.py (the betting function — compute_edge() is the core calculation you'll call at every snapshot)
+6. critic_model.py (the KDE model — build_critic_profiles(), build_kde_lambda_model(), estimate_lambda(), estimate_p_fresh())
+7. One hourly price CSV to understand the format: rt-price-histories/they_will_kill_you/kalshi-price-history-kxrt-wil-hour.csv
 
-We're replacing the aggregate lambda (review arrival rate) with a sum of per-critic KDEs. Every critic gets a 1D Gaussian KDE fitted to their historical review timing (days before bet close). At time t, lambda = sum of KDE integrals from 0 to t for all critics who haven't reviewed yet, weighted by their base rate (movies_reviewed / movies_available). When a review is observed, that critic's KDE is dropped from the sum.
+Your job: review the plan for correctness and completeness, flag anything that looks wrong or underspecified, then implement as a notebook (notebooks/kde_backtest.ipynb). Do NOT blindly follow the plan — verify the methodology makes sense before writing code.
 
-Current state (notebooks/critics_index.ipynb):
-- Critic frequency analysis complete: top critic reviewed 18/20 recent movies in the 96h-24h window. ~138 critics account for 50% of reviews, ~300 for 75%.
-- Cumulative review share curve plotted (Pareto/CDF).
-- Box+strip plots for top 30 critics' review timing (days before close).
-- Per-critic KDE grid (top 16 critics, 4x4) — shapes look reasonable at daily resolution.
-- Aggregate lambda curve prototype working — monotonically decreasing, steepest drop at 2-3 days before close, inflection point from concave-down to concave-up near close.
+How the model works (so you can verify the backtest is using it correctly):
+- build_critic_profiles(reviews_df, movies_df, training_slugs) → CriticProfiles with per-critic base_rate, fresh_rate, timing_data (days before close)
+- build_kde_lambda_model(profiles) → KDELambdaModel with population prior + per-critic KDEs (shrinkage k=3, bandwidth floor 0.5d)
+- estimate_lambda(model, days_before_close, hours_to_close, observed_critics, observed_count, first_review_dbc) → reviews/hour. Sum of weighted KDE integrals for unreviewed critics, optionally scaled by observed/expected ratio.
+- estimate_p_fresh(profiles, observed_critics, fresh_count, total_count) → float. Base_rate-weighted average of remaining critic fresh rates blended with observed rate.
+- compute_edge(threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → dict with edge_cents, p_yes, p_no. Positive edge = buy Yes is +EV.
 
-Known issues to address:
-- Day-level timestamp resolution (98% of data): causes degenerate KDEs (zero variance) for some critics and artificially tight bandwidths for others. Currently skipping zero-variance critics. Mitigations to explore: jitter, bandwidth floor, population prior blending.
-- Only plotting top 16 KDEs — should expand to include sparser critics to see how bandwidth naturally widens with less data (the core thesis of the approach).
-- 1-review critics can't get KDEs at all — need the population prior / shrinkage approach from the brainstorm doc.
-- Lambda curve doesn't yet account for 1-review and zero-variance critics (they're excluded). Need to add their contribution via a fallback model.
+Key things the backtest must get right:
+- NO LOOKAHEAD. Training set for movie X = 20 most recent movies with Bet Close Date < X's Bet Close Date. default_training_slugs() currently uses now() as cutoff — you'll need to pass the test movie's close date instead.
+- Resolution from terminal prices (not reviews.csv). Avoids the 20-movie data quality issue. Last price >= 90 → Yes, <= 10 → No.
+- Forward-fill NaN prices in the hourly CSVs (last traded price persists).
+- Review state at each snapshot = reviews with estimated_timestamp <= snapshot_time.
+- 98% of timestamps are day-level, so review state changes ~once per day for most movies. Cache the review state and only recompute when a new review's timestamp is crossed.
 
-Next steps:
-1. Expand KDE grid to show sparse critics alongside prolific ones (bandwidth contrast).
-2. Quantify how many critics are affected by the zero-variance / degenerate KDE issue.
-3. Implement population-prior blending for sparse critics.
-4. Validate: for a resolved movie, simulate the model at T-7d, T-3d, T-1d and compare predicted remaining reviews to actual.
-5. Eventually integrate with compute_edge() — replace scalar lambda + p_fresh with per-critic vectors feeding a Poisson binomial.
+Known model characteristics (from validation):
+- Lambda scaling overcorrects at T-7d (guard rails fixed: min expected 40, clamp [0.5, 2.0]). At T-7d, scaling doesn't engage — falls back to unscaled.
+- Systematic underprediction of remaining reviews at T-3d (MAE=19.5, median err=-12.4). Conservative for betting.
+- p_fresh is excellent (T-1d MAE=0.031, correlation=0.990).
+- The action window is T-3d to T-1d where the model is most accurate.
 
-Also see brainstorm/brainstorm_finite_pool_model.md and brainstorm/brainstorm_reviewer_graph.md for related ideas this model unifies.
+Performance: ~620K edge calculations (141 movies × 400h × 11 thresholds). May need 10-30 min. Consider starting with daily snapshots or a subset of movies to iterate quickly, then run the full hourly backtest.
+
+After running, write findings to findings/kde_backtest.md and update BACKLOG.md §7 status.
 ```
 
 ### Prompt 4: Parameter refinement — general (Backlog §3)
