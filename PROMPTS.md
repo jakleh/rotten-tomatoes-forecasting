@@ -34,7 +34,37 @@ Read CLAUDE.md and BACKLOG.md §1.2. Build a minimal Kalshi API client that fetc
 
 **Prereqs:** Kalshi API credentials and API docs.
 
-### Prompt 3: Parameter refinement (Backlog §3)
+### Prompt 3: Per-critic KDE lambda model (Backlog §3, brainstorm/brainstorm_critic_kde_lambda.md)
+
+```
+Read CLAUDE.md, BACKLOG.md §3, and brainstorm/brainstorm_critic_kde_lambda.md (the full writeup including the original conversation transcript).
+
+We're replacing the aggregate lambda (review arrival rate) with a sum of per-critic KDEs. Every critic gets a 1D Gaussian KDE fitted to their historical review timing (days before bet close). At time t, lambda = sum of KDE integrals from 0 to t for all critics who haven't reviewed yet, weighted by their base rate (movies_reviewed / movies_available). When a review is observed, that critic's KDE is dropped from the sum.
+
+Current state (notebooks/critics_index.ipynb):
+- Critic frequency analysis complete: top critic reviewed 18/20 recent movies in the 96h-24h window. ~138 critics account for 50% of reviews, ~300 for 75%.
+- Cumulative review share curve plotted (Pareto/CDF).
+- Box+strip plots for top 30 critics' review timing (days before close).
+- Per-critic KDE grid (top 16 critics, 4x4) — shapes look reasonable at daily resolution.
+- Aggregate lambda curve prototype working — monotonically decreasing, steepest drop at 2-3 days before close, inflection point from concave-down to concave-up near close.
+
+Known issues to address:
+- Day-level timestamp resolution (98% of data): causes degenerate KDEs (zero variance) for some critics and artificially tight bandwidths for others. Currently skipping zero-variance critics. Mitigations to explore: jitter, bandwidth floor, population prior blending.
+- Only plotting top 16 KDEs — should expand to include sparser critics to see how bandwidth naturally widens with less data (the core thesis of the approach).
+- 1-review critics can't get KDEs at all — need the population prior / shrinkage approach from the brainstorm doc.
+- Lambda curve doesn't yet account for 1-review and zero-variance critics (they're excluded). Need to add their contribution via a fallback model.
+
+Next steps:
+1. Expand KDE grid to show sparse critics alongside prolific ones (bandwidth contrast).
+2. Quantify how many critics are affected by the zero-variance / degenerate KDE issue.
+3. Implement population-prior blending for sparse critics.
+4. Validate: for a resolved movie, simulate the model at T-7d, T-3d, T-1d and compare predicted remaining reviews to actual.
+5. Eventually integrate with compute_edge() — replace scalar lambda + p_fresh with per-critic vectors feeding a Poisson binomial.
+
+Also see brainstorm/brainstorm_finite_pool_model.md and brainstorm/brainstorm_reviewer_graph.md for related ideas this model unifies.
+```
+
+### Prompt 4: Parameter refinement — general (Backlog §3)
 
 ```
 Read CLAUDE.md and BACKLOG.md §3. The betting function (edge.py) takes lambda_rate and p_fresh as inputs. The CLI accepts --lambda and --p-fresh overrides. The current defaults are naive placeholders (recent rate, running average). notebooks/parameter_exploration.ipynb has data loading, cross-movie arrival curves, snapshot helpers, and edge trajectory tools already set up. Open the notebook and continue developing better estimators. See brainstorm/ for approach ideas.
