@@ -400,14 +400,18 @@ def default_training_slugs(
     movies_df: pd.DataFrame,
     exclude_slug: str | None = None,
     n: int = 20,
+    before_date: pd.Timestamp | None = None,
 ) -> list[str]:
     """Select the most recent n resolved movies by Bet Close Date, excluding the target.
 
-    Filters to movies with Bet Close Date in the past (resolved only).
+    Args:
+        before_date: Only include movies with Bet Close Date before this timestamp.
+                     Defaults to now (resolved only). Pass the test movie's close date
+                     for backtesting to avoid lookahead bias.
     """
-    now = pd.Timestamp.now(tz="UTC")
+    cutoff = before_date if before_date is not None else pd.Timestamp.now(tz="UTC")
     candidates = movies_df.dropna(subset=["Bet Close Date"])
-    candidates = candidates[candidates["Bet Close Date"] < now]
+    candidates = candidates[candidates["Bet Close Date"] < cutoff]
     if exclude_slug is not None:
         candidates = candidates[candidates["Slug"] != exclude_slug]
     return candidates.nlargest(n, "Bet Close Date")["Slug"].tolist()

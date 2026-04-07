@@ -63,7 +63,7 @@ How the model works (so you can verify the backtest is using it correctly):
 - compute_edge(threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → dict with edge_cents, p_yes, p_no. Positive edge = buy Yes is +EV.
 
 Key things the backtest must get right:
-- NO LOOKAHEAD. Training set for movie X = 20 most recent movies with Bet Close Date < X's Bet Close Date. default_training_slugs() currently uses now() as cutoff — you'll need to pass the test movie's close date instead.
+- NO LOOKAHEAD. Training set for movie X = 20 most recent movies with Bet Close Date < X's Bet Close Date. Use default_training_slugs(movies_df, exclude_slug=slug, before_date=bet_close_date) to get the correct training set.
 - Resolution from terminal prices (not reviews.csv). Avoids the 20-movie data quality issue. Last price >= 90 → Yes, <= 10 → No.
 - Forward-fill NaN prices in the hourly CSVs (last traded price persists).
 - Review state at each snapshot = reviews with estimated_timestamp <= snapshot_time.
