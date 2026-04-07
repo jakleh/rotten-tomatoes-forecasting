@@ -10,6 +10,8 @@ The Poisson-binomial betting function (`edge.py`) and per-critic KDE model (`cri
 
 `critic_model.py` has three layers: (1) CriticProfiles — per-critic base_rate, fresh_rate, timing_data; (2) KDELambdaModel — Gaussian KDEs per critic with population prior + shrinkage (k=3, bw floor 0.5d), lambda = sum of weighted KDE integrals for unreviewed critics, optional observed/expected scaling; (3) estimate_p_fresh — base_rate-weighted average of remaining critic fresh rates blended with observed rate.
 
+KDE model backtest complete (`findings/kde_backtest.md`). No-only strategy in T-5d to T-1d window: 43% ROI, 78% win rate, 81% of movies profitable at min_edge=10c. Buy Yes loses money — the model's conservatism is a feature on the No side.
+
 Key data notes:
 - The scraper runs every 50 minutes; `edge.py` queries the Neon PostgreSQL DB for live review counts.
 - 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near close).
@@ -41,7 +43,7 @@ Read CLAUDE.md and BACKLOG.md §1.2. Build a minimal Kalshi API client that fetc
 
 Implemented in `critic_model.py`. Validated in `notebooks/critic_model_validation.ipynb`. Findings in `findings/critic_kde_model_validation.md`. See BACKLOG §3.1.
 
-### Prompt 5: KDE model backtest — review plan and implement (Backlog §7)
+### Prompt 5: KDE model backtest — ~~review plan and implement~~ (COMPLETE — daily snapshots)
 
 ```
 Read these files in order before doing anything:

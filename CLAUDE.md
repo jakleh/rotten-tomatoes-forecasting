@@ -20,7 +20,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 4. **Iterate 1-3** until concepts survive the gut-checks.
 5. **Formalize** the survivors into modular functions. By this point the ideas are crystal clear, so the math is just implementation.
 
-**Current phase:** Step 5 complete. The Poisson-binomial betting function (`edge.py`) and per-critic KDE lambda model (`critic_model.py`) are built. Now building operational infrastructure (score polling, Kalshi API) and backtesting.
+**Current phase:** Step 5 complete. The Poisson-binomial betting function (`edge.py`) and per-critic KDE lambda model (`critic_model.py`) are built and backtested. KDE backtest shows the model is profitable (+67K cents across 136 movies) but only on the No side. Now building operational infrastructure (score polling, Kalshi API) and investigating the direction asymmetry.
 
 ## File Structure
 
@@ -37,10 +37,11 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
 ├── notebooks/                  # Exploration notebooks
-│   ├── critic_model_validation.ipynb # Active: KDE model validation on historical movies
-│   ├── kde_lambda_calibration.ipynb # Archived: volume prediction gut-checks for KDE model
-│   ├── critics_index.ipynb          # Archived: critic frequency analysis and KDE prototyping
-│   ├── parameter_exploration.ipynb  # Active: lambda + p_fresh estimator workspace
+│   ├── kde_backtest.ipynb               # Active: KDE model P&L backtest (daily snapshots)
+│   ├── critic_model_validation.ipynb    # Archived: KDE model validation on historical movies
+│   ├── kde_lambda_calibration.ipynb     # Archived: volume prediction gut-checks for KDE model
+│   ├── critics_index.ipynb              # Archived: critic frequency analysis and KDE prototyping
+│   ├── parameter_exploration.ipynb      # Active: lambda + p_fresh estimator workspace
 │   ├── dataset_survey.ipynb         # Archived: broad dataset exploration
 │   ├── misprice_backtest.ipynb      # Archived: deterministic bounds backtest
 │   ├── misprice_backtest_deep_dive.ipynb  # Archived: clean-data movie deep dive
@@ -150,12 +151,13 @@ Replaces naive lambda/p_fresh with estimators grounded in per-critic historical 
 
 `BACKLOG.md` has the full priority list. `PROMPTS.md` has handoff prompts for new conversations. `SOURCES.md` lists data and literature to gather.
 
-**Current state:** Betting function v1 (`edge.py`) and per-critic KDE model (`critic_model.py`) are built. Dataset is complete (reviews.csv, movies_index.csv, ~141 price histories). `--kde` flag on the CLI integrates the KDE model. Now building operational infrastructure.
+**Current state:** Betting function v1 (`edge.py`) and per-critic KDE model (`critic_model.py`) are built and backtested. KDE backtest (`notebooks/kde_backtest.ipynb`) shows +67K cents P&L across 136 movies at min_edge=5c, but only on the No side (Buy Yes loses money). The model's conservatism (underpredicting remaining reviews) is a feature for No bets. Action window T-5d to T-1d confirmed (best per-trade returns at T-3d). Position-level analysis: 43-64% ROI, 76-81% win rate, 81% of movies profitable. See `findings/kde_backtest.md`.
 
 **Next steps (in order):**
-1. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). Needed for real-time lambda estimation and future backtesting. See BACKLOG §1.1.
-2. **Kalshi API client.** Fetch live prices for automated comparison. Foundation for the eventual execution pipeline. See BACKLOG §1.2.
-3. **Backtesting framework.** Replay probability model against resolved markets. See BACKLOG §7.
+1. **Investigate direction asymmetry.** Why does Buy Yes lose? Is it lambda underprediction, p_fresh bias, or structural? Could a No-only strategy be formalized?
+2. **Optimize for hourly backtest.** Vectorize `estimate_lambda` KDE integrals to make hourly snapshots feasible (<30 min).
+3. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1.
+4. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
 
 ## How to Run
 

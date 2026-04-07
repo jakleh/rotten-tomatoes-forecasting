@@ -148,7 +148,7 @@ Ideas from brainstorming that survived initial gut-checks but are not the curren
 
 ### Operational (when ready to bet)
 
-- **Backtesting framework:** Replay probability model against resolved markets. Measure calibration, Brier scores, retroactive P&L. The backtest notebooks provide a foundation but need the probabilistic model plugged in.
+- **Backtesting framework:** KDE model backtest complete (daily snapshots, 136 movies). Position-level No-only strategy: 43% ROI, 78% win rate, 81% of movies profitable (min_edge=10c, T-5d to T-1d). Findings in `findings/kde_backtest.md`. Hourly backtest needs `estimate_lambda` vectorization. Next: investigate direction asymmetry, live validation on upcoming movies.
 - **Automated execution pipeline:** Model → edge detection → Kelly sizing → order placement via Kalshi API.
 - **Credential handling:** DATABASE_URL and Kalshi API keys via environment variables, never committed.
 
@@ -164,4 +164,4 @@ Ideas from brainstorming that survived initial gut-checks but are not the curren
 | 3.1 | Per-critic KDE lambda model | Very High | Medium-High | **Complete** |
 | 3.2 | Other parameter refinements | Medium | Ongoing | After §3.1 |
 | 5.1 | Kalshi fee schedule | Medium | Low | Open |
-| 7.x | Backtesting framework (probabilistic) | Very High | Medium | After §1 |
+| 7.x | KDE model backtest | Very High | Medium | **Complete (daily)** — hourly needs optimization |
