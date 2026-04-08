@@ -107,6 +107,44 @@ The backtest trades DataFrame has: slug, snapshot_time, hours_to_close, threshol
 Start with aggregate diagnostics (lambda error vs p_fresh error by direction), then drill into specific movies. Write findings to findings/direction_asymmetry.md.
 ```
 
+### Prompt 7: Package this repo as a module for orchestrator integration
+
+```
+Read these files in order before doing anything:
+1. CLAUDE.md (project overview, current state, file structure)
+2. edge.py (the betting function — compute_edge() is the core public API)
+3. critic_model.py (KDE model — build_critic_profiles(), build_kde_lambda_model(), estimate_lambda(), estimate_p_fresh(), default_training_slugs())
+4. brainstorm/future/brainstorm_orchestrator_integration.md (design doc for how an external orchestrator would consume this module)
+5. PARAMETERS.md (all tunable model parameters)
+6. findings/lambda_baseline_comparison.md (validates the scaled KDE approach as best lambda estimator)
+
+CONTEXT: This repo is about to become an importable forecasting module consumed by a separate Kalshi trading orchestrator repo. The orchestrator will handle live data ingestion, trade execution, position management. This repo stays pure forecasting — no API keys, no scheduling, no execution logic.
+
+Your job has two parts:
+
+PART 1: Review the brainstorm doc (brainstorm/future/brainstorm_orchestrator_integration.md).
+- Is the proposed call chain correct? Trace through the actual function signatures and verify inputs/outputs match.
+- Are there any functions or data structures the orchestrator would need that aren't mentioned?
+- Are there any hidden dependencies (global state, env vars, file paths) that would break when imported from another repo?
+- Is anything missing from the "what the orchestrator owns" section?
+- Flag any concerns or gaps.
+
+PART 2: Write a plan doc (plans/plan_module_packaging.md) for refactoring this repo into a clean importable package. Follow PROTOCOL.md.
+
+Things to address in the plan:
+1. Package structure: __init__.py, what to re-export, what stays internal.
+2. The public API surface: which functions/classes are the public interface vs internal helpers. Be specific — list them.
+3. DB convenience functions (get_observed_critics, get_movie_state): keep for CLI use but clearly separate from the core API that the orchestrator would call.
+4. CLI (edge.py __main__): keep working as-is, but the module import path should not require running it as a script.
+5. Print statements in model building: add a verbose flag or use logging.
+6. Any type hints, docstrings, or signature changes needed to make the API self-documenting for an external consumer.
+7. How the orchestrator would install/import this (git submodule vs pip install from private repo).
+
+Do NOT over-engineer. The goal is the minimum packaging needed for clean import from another repo. No web frameworks, no config files, no plugin systems. Two .py files becoming an importable package.
+
+Present the plan for review before implementing anything.
+```
+
 ### Prompt 4: Parameter refinement — general (Backlog §3)
 
 ```
