@@ -107,42 +107,43 @@ The backtest trades DataFrame has: slug, snapshot_time, hours_to_close, threshol
 Start with aggregate diagnostics (lambda error vs p_fresh error by direction), then drill into specific movies. Write findings to findings/direction_asymmetry.md.
 ```
 
-### Prompt 7: Package this repo as a module for orchestrator integration
+### Prompt 7: Package this repo as a module for orchestrator integration — ~~brainstorm review + plan~~ (COMPLETE) → implement
+
+Brainstorm review and plan are done. The brainstorm call chain is verified correct. Three gaps were flagged: (1) configurable hyperparameters (shrinkage_k, bandwidth_floor, n_prior) not mentioned as orchestrator-owned, (2) bare `from critic_model import` will break in package form, (3) print statements need verbose flag. Plan is written at `plans/plan_module_packaging.md`.
 
 ```
 Read these files in order before doing anything:
 1. CLAUDE.md (project overview, current state, file structure)
-2. edge.py (the betting function — compute_edge() is the core public API)
-3. critic_model.py (KDE model — build_critic_profiles(), build_kde_lambda_model(), estimate_lambda(), estimate_p_fresh(), default_training_slugs())
-4. brainstorm/future/brainstorm_orchestrator_integration.md (design doc for how an external orchestrator would consume this module)
-5. PARAMETERS.md (all tunable model parameters)
-6. findings/lambda_baseline_comparison.md (validates the scaled KDE approach as best lambda estimator)
+2. plans/plan_module_packaging.md (the implementation plan — this is your spec, review it critically before implementing)
+3. edge.py (current betting function — you'll be moving this into the package)
+4. critic_model.py (current KDE model — you'll be moving this into the package)
+5. brainstorm/future/brainstorm_orchestrator_integration.md (design context for why we're doing this)
+6. pyproject.toml (current project config — you'll need to update this)
 
-CONTEXT: This repo is about to become an importable forecasting module consumed by a separate Kalshi trading orchestrator repo. The orchestrator will handle live data ingestion, trade execution, position management. This repo stays pure forecasting — no API keys, no scheduling, no execution logic.
+CONTEXT: This repo is becoming an importable forecasting module consumed by a separate Kalshi trading orchestrator. The brainstorm review and plan doc are done. Your job is to implement the plan.
 
-Your job has two parts:
+The plan has 10 steps. In summary:
+1. Create `rt_analysis/` package directory with __init__.py, edge.py, critic_model.py, _db.py, __main__.py
+2. Move compute_edge + naive estimators into rt_analysis/edge.py
+3. Move KDE model code into rt_analysis/critic_model.py
+4. Extract DB helpers (get_movie_state, get_observed_critics) into rt_analysis/_db.py
+5. Wire up __init__.py with 8 public API symbols + __version__
+6. Create __main__.py for CLI (`python -m rt_analysis`)
+7. Add verbose flag to build_critic_profiles and build_kde_lambda_model (replace print statements)
+8. Add EdgeResult TypedDict for compute_edge return type
+9. Add proper docstrings to CriticProfiles and KDELambdaModel
+10. Update pyproject.toml with package config and entry point
+11. Update notebook imports (grep for `from critic_model import` and `import edge`)
 
-PART 1: Review the brainstorm doc (brainstorm/future/brainstorm_orchestrator_integration.md).
-- Is the proposed call chain correct? Trace through the actual function signatures and verify inputs/outputs match.
-- Are there any functions or data structures the orchestrator would need that aren't mentioned?
-- Are there any hidden dependencies (global state, env vars, file paths) that would break when imported from another repo?
-- Is anything missing from the "what the orchestrator owns" section?
-- Flag any concerns or gaps.
+Review the plan for anything that looks wrong before implementing. Flag concerns but don't block on minor issues — implement and note deviations.
 
-PART 2: Write a plan doc (plans/plan_module_packaging.md) for refactoring this repo into a clean importable package. Follow PROTOCOL.md.
+Verify after implementation:
+- `from rt_analysis import compute_edge, build_critic_profiles, estimate_lambda` works
+- `uv run python -m rt_analysis --help` works
+- Delete the root-level edge.py and critic_model.py (no backwards-compat shims)
+- Notebooks will need import path updates — do those too
 
-Things to address in the plan:
-1. Package structure: __init__.py, what to re-export, what stays internal.
-2. The public API surface: which functions/classes are the public interface vs internal helpers. Be specific — list them.
-3. DB convenience functions (get_observed_critics, get_movie_state): keep for CLI use but clearly separate from the core API that the orchestrator would call.
-4. CLI (edge.py __main__): keep working as-is, but the module import path should not require running it as a script.
-5. Print statements in model building: add a verbose flag or use logging.
-6. Any type hints, docstrings, or signature changes needed to make the API self-documenting for an external consumer.
-7. How the orchestrator would install/import this (git submodule vs pip install from private repo).
-
-Do NOT over-engineer. The goal is the minimum packaging needed for clean import from another repo. No web frameworks, no config files, no plugin systems. Two .py files becoming an importable package.
-
-Present the plan for review before implementing anything.
+Do NOT add tests, CI, serialization, or a higher-level convenience API. Minimum viable packaging only.
 ```
 
 ### Prompt 4: Parameter refinement — general (Backlog §3)
