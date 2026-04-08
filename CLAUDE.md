@@ -38,6 +38,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
 ├── notebooks/                  # Exploration notebooks
 │   ├── kde_backtest.ipynb               # Active: KDE model P&L backtest (daily snapshots)
+│   ├── bankroll_simulation.ipynb        # Active: compounding bankroll simulation (No-only strategy)
 │   ├── critic_model_validation.ipynb    # Archived: KDE model validation on historical movies
 │   ├── kde_lambda_calibration.ipynb     # Archived: volume prediction gut-checks for KDE model
 │   ├── critics_index.ipynb              # Archived: critic frequency analysis and KDE prototyping

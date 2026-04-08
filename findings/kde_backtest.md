@@ -165,6 +165,22 @@ Win rate is higher at position level (76-81%) than snapshot level (69%) — the 
 
 ROI scales linearly with position size. At 100 contracts/position: ~$2,700/yr. Constraint is Kalshi liquidity.
 
+### Bankroll compounding simulation
+
+**Notebook:** `notebooks/bankroll_simulation.ipynb`
+
+Simulates bankroll trajectories replaying actual movie outcomes chronologically, with all positions within a movie treated as perfectly correlated (worst case). Starting bankroll: $1,000.
+
+| min_edge | risk/movie | Final bankroll | Multiplier | Movies |
+|----------|-----------|----------------|------------|--------|
+| 5c | 10% | $93,811 | 93.8x | 112 |
+| 10c | 10% | $94,260 | 94.3x | 99 |
+| 15c | 10% | $141,210 | 141.2x | 88 |
+| 20c | 10% | $147,052 | 147.1x | 76 |
+| 15c | 15% | $1,133,180 | 1,133x | 88 |
+
+Higher min_edge (15-20c) compounds better despite fewer movies — higher per-position ROI dominates. Bankroll never dipped below starting value in any configuration (0% drawdown from start). **Optimal for compounding: min_edge=15c** at moderate-to-aggressive risk fractions.
+
 ---
 
 ## Conclusions
