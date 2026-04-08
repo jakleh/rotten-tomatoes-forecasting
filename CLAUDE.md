@@ -44,6 +44,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 │   ├── threshold_fragility.ipynb        # Active: score margin & threshold fragility analysis
 │   ├── margin_bankroll_sim.ipynb        # Active: bankroll simulation with score margin band filter
 │   ├── margin_robustness.ipynb          # Archived: v1 bootstrap (with replacement — inflated variance)
+│   ├── monte_carlo_price_perturbation.ipynb  # Active: MC price perturbation simulation
 │   ├── margin_robustness_v2.ipynb       # Active: robustness analysis (corrected, with comparison table)
 │   ├── critic_model_validation.ipynb    # Archived: KDE model validation on historical movies
 │   ├── kde_lambda_calibration.ipynb     # Archived: volume prediction gut-checks for KDE model
@@ -55,6 +56,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 │   └── poisson_binomial_threshold.ipynb   # Archived: original probability model
 ├── findings/                   # Empirical results and validation findings
 │   ├── score_margin_and_robustness.md   # Score margin filter, band sweep, bootstrap robustness
+│   ├── monte_carlo_price_perturbation.md  # MC price perturbation: price risk vs composition risk
 ├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Strategy brainstorms (gitignored)
@@ -165,11 +167,12 @@ Replaces naive lambda/p_fresh with estimators grounded in per-critic historical 
 
 **Score margin bankroll simulation** (`notebooks/margin_bankroll_sim.ipynb`): Tested score margin as a band filter [floor, ceiling] on compounding returns. Key finding: a tight band around zero (e.g., -3 to +3) compounds dramatically better than no filter — 249x vs 147x at min_edge=20c. Cutting only the ceiling (≤ 0) hurts compounding because above-threshold trades are still +EV. Cutting the floor helps because "easy wins" far below threshold have small payoffs that dilute compounding. Bootstrap robustness analysis (`notebooks/margin_robustness.ipynb`, 10K resamples) shows the band filter mostly inflates upside, not downside — p5 is similar across configs (26-34x), zero ruin risk. No-filter has best risk-adjusted metrics (med/std); band filter has higher median but wider variance. See `PARAMETERS.md` for full strategy parameter taxonomy.
 
+**Monte Carlo price perturbation** (`notebooks/monte_carlo_price_perturbation.ipynb`): Perturbed market prices with empirical noise (5K sims). Key finding: **price noise is a much smaller source of variance than composition risk.** MC p5-to-p95 spread is 4-8x vs bootstrap's 20-67x. For 20c/[-3,+3]: MC median=255x, p5=154x, p1=122x. Even the worst 1st-percentile price-noise draw produces 122x. ~66 movies form a stable entry core; 16 are sensitive to price noise (edge near threshold). See `findings/monte_carlo_price_perturbation.md`.
+
 **Next steps (in order):**
-1. **Monte Carlo price perturbation.** Perturb market prices with empirical noise to create realistic variance in the bankroll simulation. Plan at `plans/plan_monte_carlo_price_perturbation.md`, handoff prompt at Prompt 8 in PROMPTS.md.
-2. **Package for orchestrator.** Refactor into importable `rt_analysis` package. Plan at `plans/plan_module_packaging.md`, handoff prompt at Prompt 7 in PROMPTS.md.
-3. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1.
-4. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
+1. **Package for orchestrator.** Refactor into importable `rt_analysis` package. Plan at `plans/plan_module_packaging.md`, handoff prompt at Prompt 7 in PROMPTS.md.
+2. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1.
+3. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
 
 ## How to Run
 
