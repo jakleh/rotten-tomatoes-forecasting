@@ -32,7 +32,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── PROTOCOL.md                 # Build protocol (plan → implement → validate)
 ├── BACKLOG.md                  # Priorities, ideas, infrastructure, platform mechanics
 ├── SOURCES.md                  # Literature, data, and hard numbers to gather
-├── PARAMETERS.md               # All tunable model parameters, documented
+├── PARAMETERS.md               # All tunable parameters: model + strategy, documented
 ├── PROMPTS.md                  # Handoff prompts for new conversations
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
@@ -41,6 +41,10 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 │   ├── kde_backtest.ipynb               # Active: KDE model P&L backtest (daily snapshots)
 │   ├── bankroll_simulation.ipynb        # Active: compounding bankroll simulation (No-only strategy)
 │   ├── lambda_baseline_comparison.ipynb # Active: KDE vs naive lambda baselines
+│   ├── threshold_fragility.ipynb        # Active: score margin & threshold fragility analysis
+│   ├── margin_bankroll_sim.ipynb        # Active: bankroll simulation with score margin band filter
+│   ├── margin_robustness.ipynb          # Archived: v1 bootstrap (with replacement — inflated variance)
+│   ├── margin_robustness_v2.ipynb       # Active: robustness analysis (corrected, with comparison table)
 │   ├── critic_model_validation.ipynb    # Archived: KDE model validation on historical movies
 │   ├── kde_lambda_calibration.ipynb     # Archived: volume prediction gut-checks for KDE model
 │   ├── critics_index.ipynb              # Archived: critic frequency analysis and KDE prototyping
@@ -50,6 +54,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 │   ├── misprice_backtest_deep_dive.ipynb  # Archived: clean-data movie deep dive
 │   └── poisson_binomial_threshold.ipynb   # Archived: original probability model
 ├── findings/                   # Empirical results and validation findings
+│   ├── score_margin_and_robustness.md   # Score margin filter, band sweep, bootstrap robustness
 ├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Strategy brainstorms (gitignored)
@@ -156,9 +161,13 @@ Replaces naive lambda/p_fresh with estimators grounded in per-critic historical 
 
 **Current state:** Betting function v1 (`edge.py`) and per-critic KDE model (`critic_model.py`) are built and backtested. KDE backtest (`notebooks/kde_backtest.ipynb`) shows +67K cents P&L across 136 movies at min_edge=5c, but only on the No side (Buy Yes loses money). The model's conservatism (underpredicting remaining reviews) is a feature for No bets. Action window T-5d to T-1d confirmed (best per-trade returns at T-3d). Position-level analysis: 43-64% ROI, 76-81% win rate, 81% of movies profitable. See `findings/kde_backtest.md`. Lambda baseline comparison (`findings/lambda_baseline_comparison.md`) tested four lambda estimators: KDE (scaled), blended KDE, naive rolling, blended rolling. KDE scaled wins on per-trade quality (76% win rate vs 64-69%, 22.1c/trade vs 15-19c). Blending KDE with rolling rate doesn't beat scaling — scaling preserves the KDE's temporal shape while blending replaces it. The scaling approach is validated as the right mechanism for lambda correction.
 
+**Threshold fragility analysis** (`notebooks/threshold_fragility.ipynb`): Tested whether No edge concentrates at high thresholds due to mathematical fragility of high percentages (`p/(1-p)` asymmetry). Key finding: edge does NOT concentrate by threshold level — it concentrates by **score margin** (current score minus threshold). No signals where score is just below the threshold (-5 to 0pp margin) have 90% win rate and 27.7c/trade; signals where score is above the threshold (0 to +5pp) drop to 40% win rate. The model excels at "this score won't recover" but struggles with "this score will drop."
+
+**Score margin bankroll simulation** (`notebooks/margin_bankroll_sim.ipynb`): Tested score margin as a band filter [floor, ceiling] on compounding returns. Key finding: a tight band around zero (e.g., -3 to +3) compounds dramatically better than no filter — 249x vs 147x at min_edge=20c. Cutting only the ceiling (≤ 0) hurts compounding because above-threshold trades are still +EV. Cutting the floor helps because "easy wins" far below threshold have small payoffs that dilute compounding. Bootstrap robustness analysis (`notebooks/margin_robustness.ipynb`, 10K resamples) shows the band filter mostly inflates upside, not downside — p5 is similar across configs (26-34x), zero ruin risk. No-filter has best risk-adjusted metrics (med/std); band filter has higher median but wider variance. See `PARAMETERS.md` for full strategy parameter taxonomy.
+
 **Next steps (in order):**
-1. **Investigate direction asymmetry.** Why does Buy Yes lose? Is it lambda underprediction, p_fresh bias, or structural? Could a No-only strategy be formalized?
-2. **Optimize for hourly backtest.** Vectorize `estimate_lambda` KDE integrals to make hourly snapshots feasible (<30 min).
+1. **Monte Carlo price perturbation.** Perturb market prices with empirical noise to create realistic variance in the bankroll simulation. Plan at `plans/plan_monte_carlo_price_perturbation.md`, handoff prompt at Prompt 8 in PROMPTS.md.
+2. **Package for orchestrator.** Refactor into importable `rt_analysis` package. Plan at `plans/plan_module_packaging.md`, handoff prompt at Prompt 7 in PROMPTS.md.
 3. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1.
 4. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
 

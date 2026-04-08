@@ -169,7 +169,7 @@ ROI scales linearly with position size. At 100 contracts/position: ~$2,700/yr. C
 
 **Notebook:** `notebooks/bankroll_simulation.ipynb`
 
-Simulates bankroll trajectories replaying actual movie outcomes chronologically, with all positions within a movie treated as perfectly correlated (worst case). Starting bankroll: $1,000.
+Simulates bankroll trajectories replaying actual movie outcomes chronologically (single pass, no resampling or replacement), with all positions within a movie treated as perfectly correlated (worst case). Starting bankroll: $1,000. Note: with fractional betting, order doesn't affect the final multiplier — the product of per-movie returns is commutative.
 
 | min_edge | risk/movie | Final bankroll | Multiplier | Movies |
 |----------|-----------|----------------|------------|--------|
@@ -179,7 +179,7 @@ Simulates bankroll trajectories replaying actual movie outcomes chronologically,
 | 20c | 10% | $147,052 | 147.1x | 76 |
 | 15c | 15% | $1,133,180 | 1,133x | 88 |
 
-Higher min_edge (15-20c) compounds better despite fewer movies — higher per-position ROI dominates. Bankroll never dipped below starting value in any configuration (0% drawdown from start). **Optimal for compounding: min_edge=15c** at moderate-to-aggressive risk fractions.
+Higher min_edge (15-20c) compounds better despite fewer movies — higher per-position ROI dominates. Bankroll never dipped below starting value in any configuration (0% drawdown from start). **Updated:** min_edge=20c is the peak (see `findings/score_margin_and_robustness.md` for extended sweep through 40c and score margin band filter analysis with bootstrap robustness testing).
 
 ---
 

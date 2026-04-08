@@ -146,6 +146,30 @@ Verify after implementation:
 Do NOT add tests, CI, serialization, or a higher-level convenience API. Minimum viable packaging only.
 ```
 
+### Prompt 8: Monte Carlo price perturbation simulation
+
+```
+Read these files in order before doing anything:
+1. CLAUDE.md (project overview, current state)
+2. findings/score_margin_and_robustness.md (the deterministic results and robustness analysis this builds on — read carefully, this is essential context)
+3. plans/plan_monte_carlo_price_perturbation.md (the plan — review it critically before implementing)
+4. PARAMETERS.md (strategy parameters, especially the score margin band filter and min_edge sections)
+5. notebooks/margin_bankroll_sim.ipynb (the current bankroll simulation — understand how positions and P&L are computed)
+6. edge.py (compute_edge — you'll use the fact that edge is linear in market_price)
+
+CONTEXT: The bankroll simulation is fully deterministic — same movies, same prices, same result every time. Shuffling order doesn't matter (fractional betting makes the product commutative). With-replacement bootstrapping tested composition risk but has an artifact: it duplicates movies, allowing the same position to be taken multiple times. We need a realistic source of variance.
+
+The plan proposes perturbing market prices with empirical noise to create genuine Monte Carlo variation. The model side (reviews, KDE, p_fresh) stays fixed. Only the market price changes, which shifts when edge first crosses min_edge and at what entry price. This is cheap because edge is linear in market_price — no KDE recomputation needed.
+
+Your job: review the plan for correctness and completeness, flag concerns, then implement as a notebook. Key things to verify:
+- Step 3's optimization (reusing cached model_p_yes instead of recomputing compute_edge) is correct.
+- The noise model in Step 1 makes sense given the actual price data.
+- The clamping and perturbation approach preserves realistic price behavior.
+- Resolution is determined from actual terminal prices, not perturbed ones.
+
+Start with a small run (100 sims) to validate, then scale up. Compare the Monte Carlo distribution to the deterministic ACTUAL (249x for 20c/[-3,+3]). Write findings to findings/monte_carlo_price_perturbation.md.
+```
+
 ### Prompt 4: Parameter refinement — general (Backlog §3)
 
 ```
