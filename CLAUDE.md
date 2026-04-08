@@ -40,6 +40,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── notebooks/                  # Exploration notebooks
 │   ├── kde_backtest.ipynb               # Active: KDE model P&L backtest (daily snapshots)
 │   ├── bankroll_simulation.ipynb        # Active: compounding bankroll simulation (No-only strategy)
+│   ├── lambda_baseline_comparison.ipynb # Active: KDE vs naive lambda baselines
 │   ├── critic_model_validation.ipynb    # Archived: KDE model validation on historical movies
 │   ├── kde_lambda_calibration.ipynb     # Archived: volume prediction gut-checks for KDE model
 │   ├── critics_index.ipynb              # Archived: critic frequency analysis and KDE prototyping
@@ -153,7 +154,7 @@ Replaces naive lambda/p_fresh with estimators grounded in per-critic historical 
 
 `BACKLOG.md` has the full priority list. `PROMPTS.md` has handoff prompts for new conversations. `SOURCES.md` lists data and literature to gather.
 
-**Current state:** Betting function v1 (`edge.py`) and per-critic KDE model (`critic_model.py`) are built and backtested. KDE backtest (`notebooks/kde_backtest.ipynb`) shows +67K cents P&L across 136 movies at min_edge=5c, but only on the No side (Buy Yes loses money). The model's conservatism (underpredicting remaining reviews) is a feature for No bets. Action window T-5d to T-1d confirmed (best per-trade returns at T-3d). Position-level analysis: 43-64% ROI, 76-81% win rate, 81% of movies profitable. See `findings/kde_backtest.md`.
+**Current state:** Betting function v1 (`edge.py`) and per-critic KDE model (`critic_model.py`) are built and backtested. KDE backtest (`notebooks/kde_backtest.ipynb`) shows +67K cents P&L across 136 movies at min_edge=5c, but only on the No side (Buy Yes loses money). The model's conservatism (underpredicting remaining reviews) is a feature for No bets. Action window T-5d to T-1d confirmed (best per-trade returns at T-3d). Position-level analysis: 43-64% ROI, 76-81% win rate, 81% of movies profitable. See `findings/kde_backtest.md`. Lambda baseline comparison (`findings/lambda_baseline_comparison.md`) tested four lambda estimators: KDE (scaled), blended KDE, naive rolling, blended rolling. KDE scaled wins on per-trade quality (76% win rate vs 64-69%, 22.1c/trade vs 15-19c). Blending KDE with rolling rate doesn't beat scaling — scaling preserves the KDE's temporal shape while blending replaces it. The scaling approach is validated as the right mechanism for lambda correction.
 
 **Next steps (in order):**
 1. **Investigate direction asymmetry.** Why does Buy Yes lose? Is it lambda underprediction, p_fresh bias, or structural? Could a No-only strategy be formalized?
