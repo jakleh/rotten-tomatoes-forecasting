@@ -45,7 +45,7 @@ These control how we estimate the rate of future review arrivals (reviews/hour).
 
 | Parameter | Value | Location | Description |
 |---|---|---|---|
-| `min_edge` | 5c | `notebooks/kde_backtest.ipynb` | Minimum absolute edge (in cents) to trigger a bet. Below this, no position taken. |
+| `min_edge` | 5c+ | `notebooks/kde_backtest.ipynb`, `notebooks/bankroll_simulation.ipynb` | Minimum absolute edge (in cents) to trigger a bet. Tested at 5, 10, 15, 20c in bankroll simulation (No-only). Higher thresholds (15-20c) produced better compounding results despite fewer trades. Not rigorously optimized. |
 | Action window | T-5d to T-1d | Backtest finding | Best per-trade returns observed in this window. Not a hard parameter in code but a finding that shapes when we'd trade. |
 | `EVERY_N_HOURS` | 24 (daily) | `notebooks/kde_backtest.ipynb` | Snapshot interval for backtest evaluation. 24 = daily, 1 = hourly (slower, needs optimization). |
 
@@ -67,4 +67,4 @@ These control how we estimate the rate of future review arrivals (reviews/hour).
 - **`shrinkage_k`**: Why 3? Affects how quickly sparse critics' KDEs converge to their own data vs population shape. Not explored.
 - **`scaling_threshold` and `scaling_clamp`**: Tuned once during validation (raised from 5 to 40, tightened from [0.3, 3.0] to [0.5, 2.0]). Could revisit.
 - **`bandwidth_floor`**: 0.5 days seems reasonable given timestamp noise (~98% day-level), but not explored.
-- **`min_edge`**: 5c tested in backtest. Sweeping showed similar results at 3-10c. Not deeply optimized.
+- **`min_edge`**: Tested at 5, 10, 15, 20c in bankroll simulation. 15-20c outperformed lower thresholds on compounding returns (fewer but higher-quality trades). Not rigorously optimized — the bankroll sim is one lens, not a grid search.
