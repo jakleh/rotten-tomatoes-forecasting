@@ -32,6 +32,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── PROTOCOL.md                 # Build protocol (plan → implement → validate)
 ├── BACKLOG.md                  # Priorities, ideas, infrastructure, platform mechanics
 ├── SOURCES.md                  # Literature, data, and hard numbers to gather
+├── PARAMETERS.md               # All tunable model parameters, documented
 ├── PROMPTS.md                  # Handoff prompts for new conversations
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)

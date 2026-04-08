@@ -82,6 +82,31 @@ Performance: ~620K edge calculations (141 movies × 400h × 11 thresholds). May 
 After running, write findings to findings/kde_backtest.md and update BACKLOG.md §7 status.
 ```
 
+### Prompt 6: Direction asymmetry investigation
+
+```
+Read these files in order before doing anything:
+1. CLAUDE.md (project overview, current state)
+2. findings/kde_backtest.md (backtest results — especially the direction asymmetry and position-level sections)
+3. critic_model.py (estimate_lambda and estimate_p_fresh — the two parameters that drive the model's conservatism)
+4. notebooks/kde_backtest.ipynb (the backtest code and trades DataFrame)
+
+The backtest found that the No-only strategy is highly profitable (43-64% ROI, 76-81% win rate) but Buy Yes loses money. ALL profit comes from the No side. The model is systematically conservative — it predicts lower P(Yes) than the market. This conservatism is the source of edge on the No side, but it's also why Buy Yes fails.
+
+Your job: figure out WHY the model is conservative and whether the Yes side can be fixed. This is an analysis notebook, not a build task. Work in notebooks/direction_asymmetry.ipynb.
+
+Questions to answer:
+1. Is the conservatism driven by lambda (underpredicting remaining reviews → overweighting current score) or p_fresh (underestimating freshness of remaining reviews), or both?
+2. For movies where Buy Yes lost money: what did the model get wrong? Did more reviews arrive than predicted (lambda too low)? Were remaining reviews fresher than predicted (p_fresh too low)? Or was the market just better informed?
+3. Is there a subset of Buy Yes signals that ARE profitable? (e.g., specific horizons, edge magnitudes, movie characteristics)
+4. Could a correction factor (e.g., inflate lambda by X% for Yes signals) make Buy Yes profitable without hurting the No side?
+5. For the No side: is there a pattern in the 19% of losing movies? Can we filter them out?
+
+The backtest trades DataFrame has: slug, snapshot_time, hours_to_close, threshold, market_price, model_p_yes, edge_cents, resolved_yes, lambda_rate, p_fresh, fresh_count, total_count. You can also access the underlying model (profiles, KDEs) by re-building for specific movies.
+
+Start with aggregate diagnostics (lambda error vs p_fresh error by direction), then drill into specific movies. Write findings to findings/direction_asymmetry.md.
+```
+
 ### Prompt 4: Parameter refinement — general (Backlog §3)
 
 ```
