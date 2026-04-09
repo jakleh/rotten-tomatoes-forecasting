@@ -8,6 +8,29 @@ These are independent axes — the same model can run with different strategy fi
 
 ---
 
+# Optimization Status
+
+| Parameter | Optimized? | Optimal Value | Priority | Rationale |
+|---|---|---|---|---|
+| **Strategy** | | | | |
+| Direction | Yes | No-only | — | Backtest: all profit from No side (+132K vs -65K Yes) |
+| `min_edge` | Yes | 20c | — | Swept 5-40c, peaks at 20c, degrades monotonically above |
+| Action window | Yes | T-5d to T-1d | — | T-3d sweet spot (70.5% WR, 13.8c/trade); T-7d breakeven |
+| `margin_band` | Yes | [-3, +3] | — | Swept + bootstrapped; 249x vs 147x; p5 floors similar |
+| `min_threshold` | Yes (not useful) | None | — | Per-trade quality flat across thresholds; margin strictly better |
+| Risk per movie | Tested, not optimized | 10% | **High** | 10%→15% jumped 141x→1,133x in sim. Kelly not explored. Zero ruin at 10% across 80K bootstrap sims — room to push higher. |
+| Max positions/movie | No | TBD | **Medium** | Backtest averages 2.3 positions/movie at 10c. Correlated outcomes (same reviews drive all thresholds) — need to simulate the right cap. |
+| **Model** | | | | |
+| `n_training` | No | 20 | **Medium** | Foundation of all critic profiles, KDEs, lambda/p_fresh. Arbitrary guess. KDE's compounding edge (76% vs 66% WR) depends on profile quality. 5 movies skipped for <5 training movies. |
+| `n_prior` | No | 20.0 | Low | In action window, total_count >> 20, so prior is heavily downweighted. Likely insensitive. |
+| `shrinkage_k` | No | 3.0 | Low | Second-order tuning on sparse critics. Population prior acts as backstop. |
+| `bandwidth_floor` | No | 0.5d | Low | ~98% day-level timestamps. Reasonable default given noise floor. |
+| `scaling_threshold` | Partially | 40 | Low | Tuned once (5→40). Affects early-window scaling only. |
+| `scaling_clamp` | Partially | [0.5, 2.0] | Low | Tuned once ([0.3,3.0]→[0.5,2.0]). Guards against wild overcorrection. |
+| Poisson tail cutoff | N/A | 1e-10 | — | Effectively exact for any practical mu. |
+
+---
+
 # Model Parameters
 
 These live in `edge.py` and `critic_model.py`. They determine the probability estimates that feed into `compute_edge()`.

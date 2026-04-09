@@ -36,7 +36,7 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── PROMPTS.md                  # Handoff prompts for new conversations
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
-├── movies_index.csv            # Per-movie metadata: volume, score range, dates (gitignored)
+├── movies_index.csv            # Per-movie metadata: volume, dates, scores (gitignored; Bet Close Date = full UTC datetime)
 ├── notebooks/                  # Exploration notebooks
 │   ├── kde_backtest.ipynb               # Active: KDE model P&L backtest (daily snapshots)
 │   ├── bankroll_simulation.ipynb        # Active: compounding bankroll simulation (No-only strategy)
@@ -57,7 +57,10 @@ The goal is `data -> max profit`. Premature formalization (investing in specific
 ├── findings/                   # Empirical results and validation findings
 │   ├── score_margin_and_robustness.md   # Score margin filter, band sweep, bootstrap robustness
 │   ├── monte_carlo_price_perturbation.md  # MC price perturbation: price risk vs composition risk
-├── rt-price-histories/         # Kalshi market price CSVs (~141 movies, minute/hour/day)
+│   ├── bet_close_time_calibration.md    # ~14h close-time miscalibration: discovery and fix
+│   ├── kalshi_rt_contract_rules.md      # Contract rules: position limits, resolution, fallbacks
+├── rt-price-histories/         # Kalshi market price CSVs (~143 movies, minute/hour/day)
+├── rt-rules-contract.pdf       # Kalshi RT contract rules (source document)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Strategy brainstorms (gitignored)
 ```
@@ -115,7 +118,7 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 - **Two-pass scraping**: The scraper runs `top-critics` then `all-critics` filters. A review scraped as a top critic has `top_critic = True`. The same review is NOT duplicated when scraped again in the all-critics pass (dedup catches it).
 - **Timestamp precision varies**: "m"-confidence timestamps are accurate to ~1 minute, "h" to ~1 hour, "d" to ~1 day. KDE-based analysis should be aware of this noise.
 - **Scrape frequency**: Every 50 minutes. Reviews with relative timestamps ("5m", "3h") get more precise `estimated_timestamp` values than date-format ones ("Mar 20").
-- **Movies tracked**: Configured in the scraper's `movies.json`. All ~141 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`.
+- **Movies tracked**: Configured in the scraper's `movies.json`. All ~143 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`, `the_drama`, `the_super_mario_galaxy_movie`.
 
 ## Core Module: `edge.py`
 
@@ -169,10 +172,12 @@ Replaces naive lambda/p_fresh with estimators grounded in per-critic historical 
 
 **Monte Carlo price perturbation** (`notebooks/monte_carlo_price_perturbation.ipynb`): Perturbed market prices with empirical noise (5K sims). Key finding: **price noise is a much smaller source of variance than composition risk.** MC p5-to-p95 spread is 4-8x vs bootstrap's 20-67x. For 20c/[-3,+3]: MC median=255x, p5=154x, p1=122x. Even the worst 1st-percentile price-noise draw produces 122x. ~66 movies form a stable entry core; 16 are sensitive to price noise (edge near threshold). See `findings/monte_carlo_price_perturbation.md`.
 
+**Close-day lambda bias** (discovered 2026-04-09): The KDE model drops all reviews on the bet close date because `Bet Close Date` was stored as midnight UTC while actual close is ~14:00 UTC. This systematically underestimates lambda, inflating apparent No edge. **Partial fix implemented:** `Bet Close Date` in `movies_index.csv` now stores full UTC datetimes (derived from price CSV last timestamps). Remaining issue: ~98% of reviews have day-level timestamps, so close-day reviews still land at midnight and may be misattributed. See `findings/bet_close_time_calibration.md` and `brainstorm/brainstorm_close_day_lambda_bias.md` for patch approaches.
+
 **Next steps (in order):**
 1. **Package for orchestrator.** Refactor into importable `rt_analysis` package. Plan at `plans/plan_module_packaging.md`, handoff prompt at Prompt 7 in PROMPTS.md.
-2. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1.
-3. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
+2. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
+3. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1. **Low priority** — the backtest uses daily snapshots and still works; MC confirmed price/timing noise barely matters. The existing 50-min scraper is sufficient for launch. Revisit if live trading reveals stale-data issues.
 
 ## How to Run
 
