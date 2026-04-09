@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-Finding profitable edges in Kalshi prediction markets for Rotten Tomatoes Tomatometer scores. Combines a scraped review database with Kalshi market price histories to identify where and when the market misprices movie scores.
+Pure forecasting library for Rotten Tomatoes Tomatometer prediction markets. Computes the probability that a movie's final Tomatometer score crosses a given threshold, and the expected edge (in cents) against a market price.
+
+This is a library, not a trading system. Its contract ends at `compute_edge() -> (edge_cents, p_yes, p_no)`. Strategy, backtesting, execution, and position sizing live in the orchestrator repo (`~/Desktop/kalshi-trading/`).
 
 This project connects to the same Neon PostgreSQL database used by the RT scraper (separate repo at `~/Desktop/rotten-tomatoes-analysis/`), but is fully independent -- no shared code, no shared config.
 
@@ -10,77 +12,98 @@ This project connects to the same Neon PostgreSQL database used by the RT scrape
 
 Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing and presenting a plan doc. See `PROTOCOL.md` for what qualifies as non-trivial.
 
-## Development Philosophy
-
-The goal is `data -> max profit`. Premature formalization (investing in specific models before understanding where the edge actually is) is the main risk. The workflow:
-
-1. **Build dataset** — scrape, dump, enrich. The richer and more unique the dataset, the better the eventual strategies.
-2. **Observe informally** — stare at charts, brainstorm, look for patterns. This is a creative exercise. Brainstorm notes go in `brainstorm/` (gitignored).
-3. **Cheap quantitative gut-check** — not modeling, just counting. "How many of 141 movies show this?" / "What's the median edge in cents?" / "Does this scatter plot have any structure?" Kills bad ideas in 20 minutes.
-4. **Iterate 1-3** until concepts survive the gut-checks.
-5. **Formalize** the survivors into modular functions. By this point the ideas are crystal clear, so the math is just implementation.
-
-**Current phase:** Step 5 complete. The Poisson-binomial betting function (`edge.py`) and per-critic KDE lambda model (`critic_model.py`) are built and backtested. KDE backtest shows the model is profitable (+67K cents across 136 movies) but only on the No side. Now building operational infrastructure (score polling, Kalshi API) and investigating the direction asymmetry.
-
 ## File Structure
 
 ```
-├── edge.py                     # Poisson-binomial betting function (core module)
-├── critic_model.py             # Per-critic KDE lambda + p_fresh estimator
-├── pyproject.toml              # Dependencies (uv managed)
+├── rotten_tomatoes_forecasting/                # The package
+│   ├── __init__.py             # Public API: 8 symbols + __version__
+│   ├── edge.py                 # compute_edge(), naive_lambda(), naive_p_fresh(), EdgeResult
+│   ├── critic_model.py         # KDE model: CriticProfiles, KDELambdaModel, estimate_lambda, estimate_p_fresh, etc.
+│   ├── _db.py                  # DB convenience functions (CLI only, not public API)
+│   └── __main__.py             # CLI entry point (python -m rotten_tomatoes_forecasting)
+├── pyproject.toml              # Dependencies (uv managed), package config
 ├── CLAUDE.md                   # This file
-├── PROTOCOL.md                 # Build protocol (plan → implement → validate)
-├── BACKLOG.md                  # Priorities, ideas, infrastructure, platform mechanics
-├── SOURCES.md                  # Literature, data, and hard numbers to gather
-├── PARAMETERS.md               # All tunable parameters: model + strategy, documented
+├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
+├── BACKLOG.md                  # Model validation and improvement priorities
 ├── PROMPTS.md                  # Handoff prompts for new conversations
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
-├── movies_index.csv            # Per-movie metadata: volume, dates, scores (gitignored; Bet Close Date = full UTC datetime)
-├── notebooks/                  # Exploration notebooks
-│   ├── kde_backtest.ipynb               # Active: KDE model P&L backtest (daily snapshots)
-│   ├── bankroll_simulation.ipynb        # Active: compounding bankroll simulation (No-only strategy)
-│   ├── lambda_baseline_comparison.ipynb # Active: KDE vs naive lambda baselines
-│   ├── threshold_fragility.ipynb        # Active: score margin & threshold fragility analysis
-│   ├── margin_bankroll_sim.ipynb        # Active: bankroll simulation with score margin band filter
-│   ├── margin_robustness.ipynb          # Archived: v1 bootstrap (with replacement — inflated variance)
-│   ├── monte_carlo_price_perturbation.ipynb  # Active: MC price perturbation simulation
-│   ├── margin_robustness_v2.ipynb       # Active: robustness analysis (corrected, with comparison table)
-│   ├── critic_model_validation.ipynb    # Archived: KDE model validation on historical movies
-│   ├── kde_lambda_calibration.ipynb     # Archived: volume prediction gut-checks for KDE model
-│   ├── critics_index.ipynb              # Archived: critic frequency analysis and KDE prototyping
-│   ├── parameter_exploration.ipynb      # Active: lambda + p_fresh estimator workspace
-│   ├── dataset_survey.ipynb         # Archived: broad dataset exploration
-│   ├── misprice_backtest.ipynb      # Archived: deterministic bounds backtest
-│   ├── misprice_backtest_deep_dive.ipynb  # Archived: clean-data movie deep dive
-│   └── poisson_binomial_threshold.ipynb   # Archived: original probability model
-├── findings/                   # Empirical results and validation findings
-│   ├── score_margin_and_robustness.md   # Score margin filter, band sweep, bootstrap robustness
-│   ├── monte_carlo_price_perturbation.md  # MC price perturbation: price risk vs composition risk
-│   ├── bet_close_time_calibration.md    # ~14h close-time miscalibration: discovery and fix
-│   ├── kalshi_rt_contract_rules.md      # Contract rules: position limits, resolution, fallbacks
-├── rt-price-histories/         # Kalshi market price CSVs (~143 movies, minute/hour/day)
+├── notebooks/                  # Model validation notebooks
+│   ├── critic_model_validation.ipynb    # KDE model validation on historical movies
+│   ├── kde_lambda_calibration.ipynb     # Volume prediction gut-checks for KDE model
+│   ├── critics_index.ipynb              # Critic frequency analysis and KDE prototyping
+│   ├── parameter_exploration.ipynb      # Lambda + p_fresh estimator workspace
+│   ├── dataset_survey.ipynb             # Broad dataset exploration
+│   ├── misprice_backtest.ipynb          # Deterministic bounds backtest (led to KDE approach)
+│   ├── misprice_backtest_deep_dive.ipynb  # Clean-data movie deep dive
+│   └── poisson_binomial_threshold.ipynb   # Original probability model
+├── findings/                   # Model validation findings
+│   ├── critic_kde_model_validation.md   # KDE model accuracy (lambda, p_fresh, calibration)
+│   └── kalshi_rt_contract_rules.md      # Contract rules: resolution, position limits, fallbacks
 ├── rt-rules-contract.pdf       # Kalshi RT contract rules (source document)
 ├── plans/                      # Implementation plans (gitignored)
-└── brainstorm/                 # Strategy brainstorms (gitignored)
+└── brainstorm/                 # Model design brainstorms (gitignored)
 ```
+
+## Public API
+
+```python
+from rotten_tomatoes_forecasting import (
+    compute_edge,           # Pure math: 7 inputs -> EdgeResult dict
+    build_critic_profiles,  # DataFrame -> CriticProfiles
+    build_kde_lambda_model, # CriticProfiles -> KDELambdaModel
+    estimate_lambda,        # Model + observed state -> float (reviews/hr)
+    estimate_p_fresh,       # Profiles + observed state -> float
+    default_training_slugs, # DataFrame -> list of slugs
+    CriticProfiles,         # Dataclass: per-critic base rates, fresh rates, timing data
+    KDELambdaModel,         # Dataclass: KDE-based lambda estimator
+)
+```
+
+**Internal (not re-exported, accessible via submodule):**
+- `rotten_tomatoes_forecasting._db.get_movie_state()` — DB query, CLI convenience only
+- `rotten_tomatoes_forecasting._db.get_observed_critics()` — DB query, CLI convenience only
+- `rotten_tomatoes_forecasting.edge.naive_lambda()`, `naive_p_fresh()` — v1 fallback estimators
+- `rotten_tomatoes_forecasting.critic_model._compute_scaling()`, `_blended_integral()`, etc. — internal helpers
 
 ## Tech Stack
 
 - **Language**: Python >= 3.13
 - **Package manager**: uv
-- **Database**: Neon (serverless PostgreSQL) via SQLAlchemy + psycopg2-binary
+- **Database**: Neon (serverless PostgreSQL) via SQLAlchemy + psycopg2-binary (CLI only)
 - **Analysis**: pandas, numpy, scipy, matplotlib
 - **Notebooks**: Jupyter via ipykernel
 
-## Database Connection
-
-The project connects to the same Neon PostgreSQL instance used by the scraper. Connection is via `DATABASE_URL` environment variable.
+## Installation
 
 ```bash
-# Launch notebook with database access
+# Development (from this repo)
+uv sync
+
+# As a dependency (from another project)
+pip install -e ~/Desktop/rotten-tomatoes-forecasting
+# or: pip install git+https://github.com/jakleh/rotten-tomatoes-forecasting.git
+```
+
+## How to Run
+
+```bash
+# CLI with naive defaults
+DATABASE_URL="postgresql://..." uv run python -m rotten_tomatoes_forecasting <movie_slug> <threshold> <market_price> <hours_to_close>
+
+# CLI with custom parameter estimates
+DATABASE_URL="postgresql://..." uv run python -m rotten_tomatoes_forecasting <movie_slug> <threshold> <market_price> <hours_to_close> --lambda 1.5 --p-fresh 0.72
+
+# CLI with per-critic KDE model (requires reviews.csv at project root)
+DATABASE_URL="postgresql://..." uv run python -m rotten_tomatoes_forecasting <movie_slug> <threshold> <market_price> <hours_to_close> --kde
+
+# Launch notebooks
 DATABASE_URL="postgresql://..." uv run jupyter notebook
 ```
+
+## Database Connection
+
+The CLI's `_db` functions connect to the same Neon PostgreSQL instance used by the scraper. Connection is via `DATABASE_URL` environment variable. The core API functions (`compute_edge`, `estimate_lambda`, etc.) have zero DB dependency -- they take DataFrames and return values.
 
 - Neon cold-starts take ~1-3s on first connection
 - `sslmode=require` is needed for Neon connections
@@ -120,84 +143,37 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 - **Scrape frequency**: Every 50 minutes. Reviews with relative timestamps ("5m", "3h") get more precise `estimated_timestamp` values than date-format ones ("Mar 20").
 - **Movies tracked**: Configured in the scraper's `movies.json`. All ~143 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`, `the_drama`, `the_super_mario_galaxy_movie`.
 
-## Core Module: `edge.py`
+## Core Module: `rotten_tomatoes_forecasting/edge.py`
 
-The Poisson-binomial betting function. Computes P(final score crosses threshold) and the expected edge in cents for an "Above X" Kalshi RT bet.
+The Poisson-binomial betting function. Computes P(final score crosses threshold) and the expected edge in cents for an "Above X" bet.
 
-**Usage:**
-```bash
-uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
-uv run python edge.py the_drama 75 42 24                          # naive lambda + p_fresh from DB
-uv run python edge.py the_drama 75 42 24 --lambda 1.5 --p-fresh 0.72  # override with your own estimates
-uv run python edge.py the_drama 75 42 24 --kde                    # per-critic KDE model (requires reviews.csv + movies_index.csv)
-```
+**`compute_edge()`** — pure math, no I/O. Takes 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) -> returns `EdgeResult` dict with edge_cents, p_yes, p_no, expected_reviews, k_max. Takes lambda and p_fresh as given; makes no assumptions about how they were estimated.
 
-**Components:**
-- `compute_edge()` — pure math, no I/O. Takes 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → returns edge_cents, p_yes, p_no. Takes lambda and p_fresh as given; makes no assumptions about how they were estimated.
-- `get_movie_state()` — queries the Neon PostgreSQL DB for raw review counts: fresh/total overall and split by top/non-top critic, plus recent timestamps. Returns data only — no parameter estimation.
-- `naive_lambda()`, `naive_p_fresh()` — v1 default estimators (reviews in last 6h / 6, fresh/total). Fallback when `--kde` is not used.
-- `--kde` flag — uses `critic_model.py` to estimate lambda and p_fresh from per-critic KDEs. Manual `--lambda` / `--p-fresh` overrides still take precedence.
-
-**Resolution math:** "Above X" resolves Yes when `round(fresh/total * 100) >= X+1`, i.e., `fresh/total >= (X + 0.5) / 100`. See `brainstorm/brainstorm_rounding_and_resolution.md` for derivation and empirical confirmation.
+**Resolution math:** "Above X" resolves Yes when `round(fresh/total * 100) >= X+1`, i.e., `fresh/total >= (X + 0.5) / 100`. See `brainstorm/brainstorm_rounding_and_resolution.md` for derivation.
 
 **Output:** `edge_cents = P(Yes) * 100 - market_price`. Positive = buy Yes is +EV, negative = buy No is +EV.
 
-**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable. The `--kde` flag provides per-critic KDE-based estimates; without it, v1 naive placeholders are used. Manual `--lambda` and `--p-fresh` overrides always take precedence.
+**Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable.
 
-## Per-Critic KDE Model: `critic_model.py`
+## Per-Critic KDE Model: `rotten_tomatoes_forecasting/critic_model.py`
 
 Replaces naive lambda/p_fresh with estimators grounded in per-critic historical data. Three layers:
 
 1. **CriticProfiles** — per-critic base_rate (P(reviews this movie)), fresh_rate, and timing_data (days-before-close). Built from training set of 20 most recent resolved movies.
-2. **KDELambdaModel** — fits Gaussian KDEs to each critic's timing data. Expected remaining reviews = sum of base_rate × KDE integral for unreviewed critics. Scaled in real-time via observed/expected ratio. Sparse critics (0-1 reviews) and degenerate KDEs (zero variance) fall back to a population prior with shrinkage (k=3, bandwidth floor 0.5d).
+2. **KDELambdaModel** — fits Gaussian KDEs to each critic's timing data. Expected remaining reviews = sum of base_rate x KDE integral for unreviewed critics. Scaled in real-time via observed/expected ratio. Sparse critics (0-1 reviews) and degenerate KDEs (zero variance) fall back to a population prior with shrinkage (k=3, bandwidth floor 0.5d).
 3. **estimate_p_fresh()** — base_rate-weighted average of remaining critic fresh rates, blended with movie's running observed rate (prior sample size n=20). No KDEs involved.
 
-**Key functions:** `build_critic_profiles()`, `build_kde_lambda_model()`, `estimate_lambda()`, `estimate_p_fresh()`, `get_observed_critics()`, `default_training_slugs()`.
+**Key functions:** `build_critic_profiles()`, `build_kde_lambda_model()`, `estimate_lambda()`, `estimate_p_fresh()`, `default_training_slugs()`.
 
 **Design:** See `plans/plan_critic_kde_lambda.md` for the full spec and `brainstorm/brainstorm_critic_kde_lambda.md` for design rationale. Validated in `notebooks/critic_model_validation.ipynb`.
 
 **What was tried and why alternatives were abandoned:**
-- *Deterministic bounds (worst/best case from remaining reviews)*: Too conservative — by the time bounds lock the outcome, the market has already corrected. See `notebooks/misprice_backtest.ipynb` and `notebooks/misprice_backtest_deep_dive.ipynb`.
-- *Market-price-only strategies (spike detection, anomaly reversion)*: Require the structural model first to define "fair value." See `brainstorm/brainstorm_market_strategies.md`.
+- *Deterministic bounds (worst/best case from remaining reviews)*: Too conservative -- by the time bounds lock the outcome, the market has already corrected. See `notebooks/misprice_backtest.ipynb`.
+- *Market-price-only strategies (spike detection, anomaly reversion)*: Require the structural model first to define "fair value."
 
-## Backlog & Strategy
+## Known Issues
 
-`BACKLOG.md` has the full priority list. `PROMPTS.md` has handoff prompts for new conversations. `SOURCES.md` lists data and literature to gather.
-
-**Current state:** Betting function v1 (`edge.py`) and per-critic KDE model (`critic_model.py`) are built and backtested. KDE backtest (`notebooks/kde_backtest.ipynb`) shows +67K cents P&L across 136 movies at min_edge=5c, but only on the No side (Buy Yes loses money). The model's conservatism (underpredicting remaining reviews) is a feature for No bets. Action window T-5d to T-1d confirmed (best per-trade returns at T-3d). Position-level analysis: 43-64% ROI, 76-81% win rate, 81% of movies profitable. See `findings/kde_backtest.md`. Lambda baseline comparison (`findings/lambda_baseline_comparison.md`) tested four lambda estimators: KDE (scaled), blended KDE, naive rolling, blended rolling. KDE scaled wins on per-trade quality (76% win rate vs 64-69%, 22.1c/trade vs 15-19c). Blending KDE with rolling rate doesn't beat scaling — scaling preserves the KDE's temporal shape while blending replaces it. The scaling approach is validated as the right mechanism for lambda correction.
-
-**Threshold fragility analysis** (`notebooks/threshold_fragility.ipynb`): Tested whether No edge concentrates at high thresholds due to mathematical fragility of high percentages (`p/(1-p)` asymmetry). Key finding: edge does NOT concentrate by threshold level — it concentrates by **score margin** (current score minus threshold). No signals where score is just below the threshold (-5 to 0pp margin) have 90% win rate and 27.7c/trade; signals where score is above the threshold (0 to +5pp) drop to 40% win rate. The model excels at "this score won't recover" but struggles with "this score will drop."
-
-**Score margin bankroll simulation** (`notebooks/margin_bankroll_sim.ipynb`): Tested score margin as a band filter [floor, ceiling] on compounding returns. Key finding: a tight band around zero (e.g., -3 to +3) compounds dramatically better than no filter — 249x vs 147x at min_edge=20c. Cutting only the ceiling (≤ 0) hurts compounding because above-threshold trades are still +EV. Cutting the floor helps because "easy wins" far below threshold have small payoffs that dilute compounding. Bootstrap robustness analysis (`notebooks/margin_robustness.ipynb`, 10K resamples) shows the band filter mostly inflates upside, not downside — p5 is similar across configs (26-34x), zero ruin risk. No-filter has best risk-adjusted metrics (med/std); band filter has higher median but wider variance. See `PARAMETERS.md` for full strategy parameter taxonomy.
-
-**Monte Carlo price perturbation** (`notebooks/monte_carlo_price_perturbation.ipynb`): Perturbed market prices with empirical noise (5K sims). Key finding: **price noise is a much smaller source of variance than composition risk.** MC p5-to-p95 spread is 4-8x vs bootstrap's 20-67x. For 20c/[-3,+3]: MC median=255x, p5=154x, p1=122x. Even the worst 1st-percentile price-noise draw produces 122x. ~66 movies form a stable entry core; 16 are sensitive to price noise (edge near threshold). See `findings/monte_carlo_price_perturbation.md`.
-
-**Close-day lambda bias** (discovered 2026-04-09): The KDE model drops all reviews on the bet close date because `Bet Close Date` was stored as midnight UTC while actual close is ~14:00 UTC. This systematically underestimates lambda, inflating apparent No edge. **Partial fix implemented:** `Bet Close Date` in `movies_index.csv` now stores full UTC datetimes (derived from price CSV last timestamps). Remaining issue: ~98% of reviews have day-level timestamps, so close-day reviews still land at midnight and may be misattributed. See `findings/bet_close_time_calibration.md` and `brainstorm/brainstorm_close_day_lambda_bias.md` for patch approaches.
-
-**Next steps (in order):**
-1. **Package for orchestrator.** Refactor into importable `rt_analysis` package. Plan at `plans/plan_module_packaging.md`, handoff prompt at Prompt 7 in PROMPTS.md.
-2. **Kalshi API client.** Fetch live prices for automated comparison. See BACKLOG §1.2.
-3. **High-frequency score polling.** Detect review arrivals between scraper runs (every 1-5 min). See BACKLOG §1.1. **Low priority** — the backtest uses daily snapshots and still works; MC confirmed price/timing noise barely matters. The existing 50-min scraper is sufficient for launch. Revisit if live trading reveals stale-data issues.
-
-## How to Run
-
-```bash
-# Install dependencies
-cd ~/Desktop/rt-analysis
-uv sync
-
-# Run the betting function (naive defaults)
-DATABASE_URL="postgresql://..." uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close>
-
-# Run with custom parameter estimates
-DATABASE_URL="postgresql://..." uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> --lambda 1.5 --p-fresh 0.72
-
-# Run with per-critic KDE model (requires reviews.csv + movies_index.csv at project root)
-DATABASE_URL="postgresql://..." uv run python edge.py <movie_slug> <threshold> <market_price> <hours_to_close> --kde
-
-# Launch notebooks (for exploration/backtesting)
-DATABASE_URL="postgresql://..." uv run jupyter notebook
-```
+**Close-day lambda bias:** The KDE model drops close-day reviews because of a UTC midnight vs actual close time mismatch. Partial fix applied. See `brainstorm/brainstorm_close_day_lambda_bias.md` and BACKLOG.md 1.3.
 
 ## Dependencies
 

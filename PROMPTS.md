@@ -1,274 +1,41 @@
 # Prompts
 
-Handoff prompts for starting new conversations. Read CLAUDE.md and BACKLOG.md for full context before using any prompt.
+Handoff prompts for starting new conversations on the rotten-tomatoes-forecasting forecasting library. Read CLAUDE.md and BACKLOG.md for full context before using any prompt.
 
 ---
 
 ## Context for All Prompts
 
-The Poisson-binomial betting function (`edge.py`) and per-critic KDE model (`critic_model.py`) are built. `edge.py` computes edge in cents for "Above X" Kalshi RT bets given 7 inputs (threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh). The `--kde` flag uses per-critic KDE-based lambda and p_fresh estimates. Manual `--lambda` and `--p-fresh` overrides always take precedence.
+This repo is a pure forecasting library. Its contract ends at `compute_edge() -> (edge_cents, p_yes, p_no)`. Strategy, backtesting, and execution concerns live in the orchestrator repo (`~/Desktop/kalshi-trading/`).
 
-`critic_model.py` has three layers: (1) CriticProfiles — per-critic base_rate, fresh_rate, timing_data; (2) KDELambdaModel — Gaussian KDEs per critic with population prior + shrinkage (k=3, bw floor 0.5d), lambda = sum of weighted KDE integrals for unreviewed critics, optional observed/expected scaling; (3) estimate_p_fresh — base_rate-weighted average of remaining critic fresh rates blended with observed rate.
-
-KDE model backtest complete (`findings/kde_backtest.md`). No-only strategy in T-5d to T-1d window: 43-64% ROI per movie, 76-81% win rate, 81% of movies profitable. Buy Yes loses money — the model's conservatism is a feature on the No side. Bankroll simulation (`notebooks/bankroll_simulation.ipynb`): $1K → $141K at min_edge=15c, 10% risk/movie over 88 movies. Optimal compounding at min_edge=15c.
-
-Key data notes:
-- The scraper runs every 50 minutes; `edge.py` queries the Neon PostgreSQL DB for live review counts.
-- 20/141 movies have review data that doesn't match ground truth (day-level timestamp noise near close).
-- Top critics are systematically ~6pp more negative — early review baskets overweight them.
-- Score ranges in `movies_index.csv` are fractions (e.g., 0.8750 = 87.5%). Price CSVs use tz-aware UTC timestamps and cents.
-- 98% of review timestamps are day-level resolution. Use `format='ISO8601'` for reviews.csv, `utc=True` for price CSVs.
+The package is at `rotten_tomatoes_forecasting/` with 8 public API symbols: `compute_edge`, `build_critic_profiles`, `build_kde_lambda_model`, `estimate_lambda`, `estimate_p_fresh`, `default_training_slugs`, `CriticProfiles`, `KDELambdaModel`.
 
 ---
 
-## Active Priorities
-
-### Prompt 1: High-frequency score polling (Backlog §1.1)
+### Prompt 1: Kalshi-independent lambda validation (Backlog 1.1)
 
 ```
-Read CLAUDE.md and BACKLOG.md §1.1. Build a lightweight poller that scrapes the displayed Tomatometer score (just the integer) for each active movie every 1-5 minutes. Log timestamp + score. This detects review arrivals between the scraper's 50-minute runs and enables real-time lambda estimation for edge.py.
+Read CLAUDE.md and BACKLOG.md 1.1. Design and implement a validation notebook that tests estimate_lambda() accuracy using minute-level review data, without any reference to Kalshi market resolution.
 
-This does NOT need the full review page parse — just the displayed score number. Keep it simple: one script, one output format.
+The idea: for movies with minute-level timestamps, we know the exact review count at any point in time. At snapshot time T, we can call estimate_lambda() to predict remaining reviews, then compare to the actual count that arrived between T and close. This is a pure model accuracy test.
+
+Currently only the_drama and the_super_mario_galaxy_movie have minute-level data. Check if that's enough for meaningful validation, or if we need to wait for more data. If the sample is too small, document what we'd need and defer.
+
+Work in notebooks/lambda_validation.ipynb. Write findings to findings/lambda_validation.md if results are meaningful.
 ```
 
-### Prompt 2: Kalshi API client (Backlog §1.2)
+### Prompt 2: Close-day lambda bias patch (Backlog 1.3)
 
 ```
-Read CLAUDE.md and BACKLOG.md §1.2. Build a minimal Kalshi API client that fetches live prices for all RT Tomatometer markets. No order placement — just price retrieval. Output: for each movie, current price for each threshold. This is the foundation for comparing edge.py output to market prices.
+Read CLAUDE.md, BACKLOG.md 1.3, and brainstorm/brainstorm_close_day_lambda_bias.md. The KDE model drops reviews on the close day because of a UTC midnight vs actual close time mismatch. The partial fix (full UTC datetimes in movies_index.csv) was applied but 98% of reviews still have day-level timestamps.
+
+Evaluate the patch approaches in the brainstorm doc and implement the best one. The fix should be in rotten_tomatoes_forecasting/critic_model.py (the build_critic_profiles or estimate_lambda path). Validate by checking whether lambda estimates change for movies near close.
 ```
 
-**Prereqs:** Kalshi API credentials and API docs.
-
-### Prompt 3: Per-critic KDE lambda model ~~— review plan and implement~~ (COMPLETE)
-
-Implemented in `critic_model.py`. Validated in `notebooks/critic_model_validation.ipynb`. Findings in `findings/critic_kde_model_validation.md`. See BACKLOG §3.1.
-
-### Prompt 5: KDE model backtest — ~~review plan and implement~~ (COMPLETE — daily snapshots)
+### Prompt 3: p_fresh calibration audit (Backlog 1.2)
 
 ```
-Read these files in order before doing anything:
-1. CLAUDE.md (project overview, conventions, file structure, how to run things)
-2. PROTOCOL.md (plan → implement → validate workflow)
-3. plans/plan_kde_backtest.md (the backtest plan — this is your spec)
-4. findings/critic_kde_model_validation.md (model validation results — understand what the model gets right and wrong before backtesting its P&L)
-5. edge.py (the betting function — compute_edge() is the core calculation you'll call at every snapshot)
-6. critic_model.py (the KDE model — build_critic_profiles(), build_kde_lambda_model(), estimate_lambda(), estimate_p_fresh())
-7. One hourly price CSV to understand the format: rt-price-histories/they_will_kill_you/kalshi-price-history-kxrt-wil-hour.csv
+Read CLAUDE.md and BACKLOG.md 1.2. Break down the existing p_fresh calibration (from findings/critic_kde_model_validation.md) by movie characteristics. Are there systematic biases for certain types of movies?
 
-Your job: review the plan for correctness and completeness, flag anything that looks wrong or underspecified, then implement as a notebook (notebooks/kde_backtest.ipynb). Do NOT blindly follow the plan — verify the methodology makes sense before writing code.
-
-How the model works (so you can verify the backtest is using it correctly):
-- build_critic_profiles(reviews_df, movies_df, training_slugs) → CriticProfiles with per-critic base_rate, fresh_rate, timing_data (days before close)
-- build_kde_lambda_model(profiles) → KDELambdaModel with population prior + per-critic KDEs (shrinkage k=3, bandwidth floor 0.5d)
-- estimate_lambda(model, days_before_close, hours_to_close, observed_critics, observed_count, first_review_dbc) → reviews/hour. Sum of weighted KDE integrals for unreviewed critics, optionally scaled by observed/expected ratio.
-- estimate_p_fresh(profiles, observed_critics, fresh_count, total_count) → float. Base_rate-weighted average of remaining critic fresh rates blended with observed rate.
-- compute_edge(threshold, market_price, fresh_count, total_count, hours_to_close, lambda_rate, p_fresh) → dict with edge_cents, p_yes, p_no. Positive edge = buy Yes is +EV.
-
-Key things the backtest must get right:
-- NO LOOKAHEAD. Training set for movie X = 20 most recent movies with Bet Close Date < X's Bet Close Date. Use default_training_slugs(movies_df, exclude_slug=slug, before_date=bet_close_date) to get the correct training set.
-- Resolution from terminal prices (not reviews.csv). Avoids the 20-movie data quality issue. Last price >= 90 → Yes, <= 10 → No.
-- Forward-fill NaN prices in the hourly CSVs (last traded price persists).
-- Review state at each snapshot = reviews with estimated_timestamp <= snapshot_time.
-- 98% of timestamps are day-level, so review state changes ~once per day for most movies. Cache the review state and only recompute when a new review's timestamp is crossed.
-
-Known model characteristics (from validation):
-- Lambda scaling overcorrects at T-7d (guard rails fixed: min expected 40, clamp [0.5, 2.0]). At T-7d, scaling doesn't engage — falls back to unscaled.
-- Systematic underprediction of remaining reviews at T-3d (MAE=19.5, median err=-12.4). Conservative for betting.
-- p_fresh is excellent (T-1d MAE=0.031, correlation=0.990).
-- The action window is T-3d to T-1d where the model is most accurate.
-
-Performance: ~620K edge calculations (141 movies × 400h × 11 thresholds). May need 10-30 min. Consider starting with daily snapshots or a subset of movies to iterate quickly, then run the full hourly backtest.
-
-After running, write findings to findings/kde_backtest.md and update BACKLOG.md §7 status.
-```
-
-### Prompt 6: Direction asymmetry investigation
-
-```
-Read these files in order before doing anything:
-1. CLAUDE.md (project overview, current state)
-2. findings/kde_backtest.md (backtest results — especially the direction asymmetry and position-level sections)
-3. critic_model.py (estimate_lambda and estimate_p_fresh — the two parameters that drive the model's conservatism)
-4. notebooks/kde_backtest.ipynb (the backtest code and trades DataFrame)
-
-The backtest found that the No-only strategy is highly profitable (43-64% ROI, 76-81% win rate) but Buy Yes loses money. ALL profit comes from the No side. The model is systematically conservative — it predicts lower P(Yes) than the market. This conservatism is the source of edge on the No side, but it's also why Buy Yes fails.
-
-Your job: figure out WHY the model is conservative and whether the Yes side can be fixed. This is an analysis notebook, not a build task. Work in notebooks/direction_asymmetry.ipynb.
-
-Questions to answer:
-1. Is the conservatism driven by lambda (underpredicting remaining reviews → overweighting current score) or p_fresh (underestimating freshness of remaining reviews), or both?
-2. For movies where Buy Yes lost money: what did the model get wrong? Did more reviews arrive than predicted (lambda too low)? Were remaining reviews fresher than predicted (p_fresh too low)? Or was the market just better informed?
-3. Is there a subset of Buy Yes signals that ARE profitable? (e.g., specific horizons, edge magnitudes, movie characteristics)
-4. Could a correction factor (e.g., inflate lambda by X% for Yes signals) make Buy Yes profitable without hurting the No side?
-5. For the No side: is there a pattern in the 19% of losing movies? Can we filter them out?
-
-The backtest trades DataFrame has: slug, snapshot_time, hours_to_close, threshold, market_price, model_p_yes, edge_cents, resolved_yes, lambda_rate, p_fresh, fresh_count, total_count. You can also access the underlying model (profiles, KDEs) by re-building for specific movies.
-
-Start with aggregate diagnostics (lambda error vs p_fresh error by direction), then drill into specific movies. Write findings to findings/direction_asymmetry.md.
-```
-
-### Prompt 7: Package this repo as a module for orchestrator integration — ~~brainstorm review + plan~~ (COMPLETE) → implement (SUPERSEDED by Prompt 8)
-
-Brainstorm review and plan are done. The brainstorm call chain is verified correct. Three gaps were flagged: (1) configurable hyperparameters (shrinkage_k, bandwidth_floor, n_prior) not mentioned as orchestrator-owned, (2) bare `from critic_model import` will break in package form, (3) print statements need verbose flag. Plan is written at `plans/plan_module_packaging.md`.
-
-```
-Read these files in order before doing anything:
-1. CLAUDE.md (project overview, current state, file structure)
-2. plans/plan_module_packaging.md (the implementation plan — this is your spec, review it critically before implementing)
-3. edge.py (current betting function — you'll be moving this into the package)
-4. critic_model.py (current KDE model — you'll be moving this into the package)
-5. brainstorm/future/brainstorm_orchestrator_integration.md (design context for why we're doing this)
-6. pyproject.toml (current project config — you'll need to update this)
-
-CONTEXT: This repo is becoming an importable forecasting module consumed by a separate Kalshi trading orchestrator. The brainstorm review and plan doc are done. Your job is to implement the plan.
-
-The plan has 10 steps. In summary:
-1. Create `rt_analysis/` package directory with __init__.py, edge.py, critic_model.py, _db.py, __main__.py
-2. Move compute_edge + naive estimators into rt_analysis/edge.py
-3. Move KDE model code into rt_analysis/critic_model.py
-4. Extract DB helpers (get_movie_state, get_observed_critics) into rt_analysis/_db.py
-5. Wire up __init__.py with 8 public API symbols + __version__
-6. Create __main__.py for CLI (`python -m rt_analysis`)
-7. Add verbose flag to build_critic_profiles and build_kde_lambda_model (replace print statements)
-8. Add EdgeResult TypedDict for compute_edge return type
-9. Add proper docstrings to CriticProfiles and KDELambdaModel
-10. Update pyproject.toml with package config and entry point
-11. Update notebook imports (grep for `from critic_model import` and `import edge`)
-
-Review the plan for anything that looks wrong before implementing. Flag concerns but don't block on minor issues — implement and note deviations.
-
-Verify after implementation:
-- `from rt_analysis import compute_edge, build_critic_profiles, estimate_lambda` works
-- `uv run python -m rt_analysis --help` works
-- Delete the root-level edge.py and critic_model.py (no backwards-compat shims)
-- Notebooks will need import path updates — do those too
-
-Do NOT add tests, CI, serialization, or a higher-level convenience API. Minimum viable packaging only.
-```
-
-### Prompt 8: Package module, separate repos, scaffold orchestrator
-
-This prompt supersedes Prompt 7 (which covered packaging only). It covers the full arc: package rt-analysis as a library, then separate strategy/backtesting concerns into a new orchestrator repo.
-
-```
-Read these files in order before doing anything:
-1. CLAUDE.md (project overview, current state, file structure)
-2. plans/plan_module_packaging.md (the packaging plan — your spec for Phase 1)
-3. brainstorm/future/brainstorm_orchestrator_integration.md (orchestrator design AND the "Separation principle" section — this defines what stays vs moves)
-4. brainstorm/brainstorm_execution_constraints.md (execution model — the orchestrator will own this logic)
-5. edge.py and critic_model.py (the code you'll be packaging)
-6. pyproject.toml (current project config)
-
-CONTEXT: This repo (rt-analysis) is becoming a pure forecasting library. A separate orchestrator repo will consume it and own everything strategy-related: backtesting, bankroll simulation, execution, position sizing, and historical data collection (price histories, orderbook snapshots).
-
-The architectural separation principle (documented in brainstorm_orchestrator_integration.md):
-- rt-analysis's contract ends at compute_edge() → (edge_cents, p_yes, p_no). It answers "what are the probabilities?" and nothing more.
-- Model validation stays here (calibration: are the probabilities accurate?).
-- Everything P&L-related moves to the orchestrator: backtesting, bankroll sims, strategy parameter sweeps, execution constraints, historical price data.
-- Tradeoff: model changes now require updating the library then re-running backtests in the orchestrator repo. This is fine — the model is stable.
-
-PHASE 1: Package rt-analysis (implement plans/plan_module_packaging.md)
-- Create rt_analysis/ package with the 8 public API symbols
-- Move edge.py, critic_model.py into package; extract _db.py; create __main__.py
-- Add verbose flags, EdgeResult TypedDict, docstrings
-- Update pyproject.toml, update notebook imports
-- Delete root-level edge.py and critic_model.py
-- Verify: `from rt_analysis import compute_edge` works, CLI works
-
-PHASE 2: Identify what stays vs moves
-After packaging, audit the repo contents against the separation principle:
-
-STAYS in rt-analysis:
-- rt_analysis/ package (the library itself)
-- pyproject.toml, CLAUDE.md, PROTOCOL.md
-- Model validation notebooks (critic_model_validation, kde_lambda_calibration, parameter_exploration)
-- Model design docs (brainstorm/brainstorm_critic_kde_lambda.md, etc.)
-- plans/ (historical plans for this repo's development)
-
-MOVES to orchestrator repo:
-- notebooks/kde_backtest.ipynb, bankroll_simulation.ipynb, margin_bankroll_sim.ipynb, margin_robustness.ipynb, margin_robustness_v2.ipynb, monte_carlo_price_perturbation.ipynb, threshold_fragility.ipynb
-- rt-price-histories/ (all historical price CSVs)
-- movies_index.csv
-- findings/kde_backtest.md (if it exists), score_margin_and_robustness.md, monte_carlo_price_perturbation.md, bet_close_time_calibration.md
-- brainstorm/brainstorm_execution_constraints.md
-- brainstorm/future/brainstorm_orchestrator_integration.md (moves to become a design doc in the new repo)
-- PARAMETERS.md (strategy parameters are orchestrator config; model parameters are documented in the library's docstrings)
-- BACKLOG.md, SOURCES.md (these track operational priorities)
-
-UNCERTAIN (flag for review):
-- findings/kalshi_rt_contract_rules.md — platform rules, relevant to both repos
-- brainstorm/ files about model design (stay) vs strategy ideas (move)
-- PROMPTS.md — most prompts reference strategy work; may need splitting
-
-Present the full stays/moves list for review before executing any moves.
-
-PHASE 3: Scaffold the orchestrator repo
-Create the new repo structure. Don't implement the orchestrator — just set up the skeleton with the moved content organized properly. Include:
-- A CLAUDE.md for the new repo (references rt-analysis as a dependency)
-- The moved notebooks, findings, price histories, and brainstorms
-- A pyproject.toml that depends on rt-analysis (pip install from local path or git URL)
-- Placeholder for orderbook snapshot collection (schema from brainstorm_orchestrator_integration.md §"Orderbook snapshot collection")
-- The evaluation loop pseudocode from brainstorm_orchestrator_integration.md as a starting point
-
-Do each phase sequentially. Verify Phase 1 works before starting Phase 2. Present the Phase 2 audit for review before executing moves in Phase 3.
-```
-
-### Prompt 9: Monte Carlo price perturbation simulation (COMPLETE)
-
-```
-Read these files in order before doing anything:
-1. CLAUDE.md (project overview, current state)
-2. findings/score_margin_and_robustness.md (the deterministic results and robustness analysis this builds on — read carefully, this is essential context)
-3. plans/plan_monte_carlo_price_perturbation.md (the plan — review it critically before implementing)
-4. PARAMETERS.md (strategy parameters, especially the score margin band filter and min_edge sections)
-5. notebooks/margin_bankroll_sim.ipynb (the current bankroll simulation — understand how positions and P&L are computed)
-6. edge.py (compute_edge — you'll use the fact that edge is linear in market_price)
-
-CONTEXT: The bankroll simulation is fully deterministic — same movies, same prices, same result every time. Shuffling order doesn't matter (fractional betting makes the product commutative). With-replacement bootstrapping tested composition risk but has an artifact: it duplicates movies, allowing the same position to be taken multiple times. We need a realistic source of variance.
-
-The plan proposes perturbing market prices with empirical noise to create genuine Monte Carlo variation. The model side (reviews, KDE, p_fresh) stays fixed. Only the market price changes, which shifts when edge first crosses min_edge and at what entry price. This is cheap because edge is linear in market_price — no KDE recomputation needed.
-
-Your job: review the plan for correctness and completeness, flag concerns, then implement as a notebook. Key things to verify:
-- Step 3's optimization (reusing cached model_p_yes instead of recomputing compute_edge) is correct.
-- The noise model in Step 1 makes sense given the actual price data.
-- The clamping and perturbation approach preserves realistic price behavior.
-- Resolution is determined from actual terminal prices, not perturbed ones.
-
-Start with a small run (100 sims) to validate, then scale up. Compare the Monte Carlo distribution to the deterministic ACTUAL (249x for 20c/[-3,+3]). Write findings to findings/monte_carlo_price_perturbation.md.
-```
-
-### Prompt 4: Parameter refinement — general (Backlog §3)
-
-```
-Read CLAUDE.md and BACKLOG.md §3. The betting function (edge.py) takes lambda_rate and p_fresh as inputs. The CLI accepts --lambda and --p-fresh overrides. The current defaults are naive placeholders (recent rate, running average). notebooks/parameter_exploration.ipynb has data loading, cross-movie arrival curves, snapshot helpers, and edge trajectory tools already set up. Open the notebook and continue developing better estimators. See brainstorm/ for approach ideas.
-```
-
----
-
-## Future Explorations (Deferred)
-
-These prompts investigate ideas from the brainstorm phase. They may feed into parameter refinement or model extensions later.
-
-### Overdispersion check (Backlog §3)
-
-```
-Read BACKLOG.md §3. Measure actual variance of fresh counts in rolling windows vs. binomial prediction across resolved movies. Is beta-binomial worth exploring, or is the i.i.d. binomial close enough?
-```
-
-### Volume-review count correlation (Backlog §7, market strategies)
-
-```
-Read BACKLOG.md §7 (market-based strategies). Using the price history CSVs, compute minute-row count as an activity proxy. Correlate with total review count from reviews.csv. Is there structure? Can we predict total review count from early trading activity?
-```
-
-### Embargo-lift divergence (Backlog §7, market strategies)
-
-```
-Read BACKLOG.md §7 and brainstorm/brainstorm_market_strategies.md (strategy 1). For resolved movies, compare the initial review basket (first 20 reviews) to the Kalshi market price. How often do they disagree, and who's right?
-```
-
-### Backtesting the betting function (Backlog §7, operational)
-
-```
-Read CLAUDE.md and BACKLOG.md §7. Replay edge.py's compute_edge() against resolved markets using historical review data and price histories. For each movie at each hourly snapshot: compute the edge, record whether the bet would have been profitable. Measure calibration (predicted P(Yes) vs. actual outcomes), Brier scores, and retroactive P&L.
+Work in notebooks/p_fresh_calibration.ipynb.
 ```

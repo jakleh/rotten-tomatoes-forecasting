@@ -1,5 +1,5 @@
 [project]
-name = "rt-analysis"
+name = "rotten-tomatoes-forecasting"
 version = "0.1.0"
 description = "Kalshi bet probability analysis for Rotten Tomatoes movies"
 requires-python = ">=3.13"
@@ -15,3 +15,18 @@ dependencies = [
     "nbstripout>=0.8",
     "python-dotenv>=1.0",
 ]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["rotten_tomatoes_forecasting"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[project.scripts]
+rotten-tomatoes-forecasting = "rotten_tomatoes_forecasting.__main__:main"
