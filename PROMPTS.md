@@ -107,7 +107,7 @@ The backtest trades DataFrame has: slug, snapshot_time, hours_to_close, threshol
 Start with aggregate diagnostics (lambda error vs p_fresh error by direction), then drill into specific movies. Write findings to findings/direction_asymmetry.md.
 ```
 
-### Prompt 7: Package this repo as a module for orchestrator integration — ~~brainstorm review + plan~~ (COMPLETE) → implement
+### Prompt 7: Package this repo as a module for orchestrator integration — ~~brainstorm review + plan~~ (COMPLETE) → implement (SUPERSEDED by Prompt 8)
 
 Brainstorm review and plan are done. The brainstorm call chain is verified correct. Three gaps were flagged: (1) configurable hyperparameters (shrinkage_k, bandwidth_floor, n_prior) not mentioned as orchestrator-owned, (2) bare `from critic_model import` will break in package form, (3) print statements need verbose flag. Plan is written at `plans/plan_module_packaging.md`.
 
@@ -146,7 +146,74 @@ Verify after implementation:
 Do NOT add tests, CI, serialization, or a higher-level convenience API. Minimum viable packaging only.
 ```
 
-### Prompt 8: Monte Carlo price perturbation simulation
+### Prompt 8: Package module, separate repos, scaffold orchestrator
+
+This prompt supersedes Prompt 7 (which covered packaging only). It covers the full arc: package rt-analysis as a library, then separate strategy/backtesting concerns into a new orchestrator repo.
+
+```
+Read these files in order before doing anything:
+1. CLAUDE.md (project overview, current state, file structure)
+2. plans/plan_module_packaging.md (the packaging plan — your spec for Phase 1)
+3. brainstorm/future/brainstorm_orchestrator_integration.md (orchestrator design AND the "Separation principle" section — this defines what stays vs moves)
+4. brainstorm/brainstorm_execution_constraints.md (execution model — the orchestrator will own this logic)
+5. edge.py and critic_model.py (the code you'll be packaging)
+6. pyproject.toml (current project config)
+
+CONTEXT: This repo (rt-analysis) is becoming a pure forecasting library. A separate orchestrator repo will consume it and own everything strategy-related: backtesting, bankroll simulation, execution, position sizing, and historical data collection (price histories, orderbook snapshots).
+
+The architectural separation principle (documented in brainstorm_orchestrator_integration.md):
+- rt-analysis's contract ends at compute_edge() → (edge_cents, p_yes, p_no). It answers "what are the probabilities?" and nothing more.
+- Model validation stays here (calibration: are the probabilities accurate?).
+- Everything P&L-related moves to the orchestrator: backtesting, bankroll sims, strategy parameter sweeps, execution constraints, historical price data.
+- Tradeoff: model changes now require updating the library then re-running backtests in the orchestrator repo. This is fine — the model is stable.
+
+PHASE 1: Package rt-analysis (implement plans/plan_module_packaging.md)
+- Create rt_analysis/ package with the 8 public API symbols
+- Move edge.py, critic_model.py into package; extract _db.py; create __main__.py
+- Add verbose flags, EdgeResult TypedDict, docstrings
+- Update pyproject.toml, update notebook imports
+- Delete root-level edge.py and critic_model.py
+- Verify: `from rt_analysis import compute_edge` works, CLI works
+
+PHASE 2: Identify what stays vs moves
+After packaging, audit the repo contents against the separation principle:
+
+STAYS in rt-analysis:
+- rt_analysis/ package (the library itself)
+- pyproject.toml, CLAUDE.md, PROTOCOL.md
+- Model validation notebooks (critic_model_validation, kde_lambda_calibration, parameter_exploration)
+- Model design docs (brainstorm/brainstorm_critic_kde_lambda.md, etc.)
+- plans/ (historical plans for this repo's development)
+
+MOVES to orchestrator repo:
+- notebooks/kde_backtest.ipynb, bankroll_simulation.ipynb, margin_bankroll_sim.ipynb, margin_robustness.ipynb, margin_robustness_v2.ipynb, monte_carlo_price_perturbation.ipynb, threshold_fragility.ipynb
+- rt-price-histories/ (all historical price CSVs)
+- movies_index.csv
+- findings/kde_backtest.md (if it exists), score_margin_and_robustness.md, monte_carlo_price_perturbation.md, bet_close_time_calibration.md
+- brainstorm/brainstorm_execution_constraints.md
+- brainstorm/future/brainstorm_orchestrator_integration.md (moves to become a design doc in the new repo)
+- PARAMETERS.md (strategy parameters are orchestrator config; model parameters are documented in the library's docstrings)
+- BACKLOG.md, SOURCES.md (these track operational priorities)
+
+UNCERTAIN (flag for review):
+- findings/kalshi_rt_contract_rules.md — platform rules, relevant to both repos
+- brainstorm/ files about model design (stay) vs strategy ideas (move)
+- PROMPTS.md — most prompts reference strategy work; may need splitting
+
+Present the full stays/moves list for review before executing any moves.
+
+PHASE 3: Scaffold the orchestrator repo
+Create the new repo structure. Don't implement the orchestrator — just set up the skeleton with the moved content organized properly. Include:
+- A CLAUDE.md for the new repo (references rt-analysis as a dependency)
+- The moved notebooks, findings, price histories, and brainstorms
+- A pyproject.toml that depends on rt-analysis (pip install from local path or git URL)
+- Placeholder for orderbook snapshot collection (schema from brainstorm_orchestrator_integration.md §"Orderbook snapshot collection")
+- The evaluation loop pseudocode from brainstorm_orchestrator_integration.md as a starting point
+
+Do each phase sequentially. Verify Phase 1 works before starting Phase 2. Present the Phase 2 audit for review before executing moves in Phase 3.
+```
+
+### Prompt 9: Monte Carlo price perturbation simulation (COMPLETE)
 
 ```
 Read these files in order before doing anything:
