@@ -42,15 +42,12 @@ def _make_reviews_df(n_movies=5, n_critics=10, reviews_per_critic_per_movie=0.6)
     return pd.DataFrame(rows)
 
 
-def _make_movies_df(n_movies=5):
-    """Generate a synthetic movies DataFrame for testing."""
-    rows = []
-    for i in range(n_movies):
-        rows.append({
-            "Slug": f"movie_{i}",
-            "Bet Close Date": pd.Timestamp("2026-03-25", tz="UTC") + pd.Timedelta(days=i),
-        })
-    return pd.DataFrame(rows)
+def _make_close_date_map(n_movies=5):
+    """Generate a synthetic close_date_map for testing."""
+    return {
+        f"movie_{i}": pd.Timestamp("2026-03-25", tz="UTC") + pd.Timedelta(days=i)
+        for i in range(n_movies)
+    }
 
 
 @pytest.fixture
@@ -59,14 +56,21 @@ def reviews_df():
 
 
 @pytest.fixture
-def movies_df():
-    return _make_movies_df()
+def close_date_map():
+    return _make_close_date_map()
 
 
 @pytest.fixture
-def profiles(reviews_df, movies_df):
+def movies_df():
+    """DataFrame form of close_date_map — used by default_training_slugs tests."""
+    m = _make_close_date_map()
+    return pd.DataFrame([{"Slug": k, "Bet Close Date": v} for k, v in m.items()])
+
+
+@pytest.fixture
+def profiles(reviews_df, close_date_map):
     slugs = [f"movie_{i}" for i in range(5)]
-    return build_critic_profiles(reviews_df, movies_df, slugs, verbose=False)
+    return build_critic_profiles(reviews_df, close_date_map, slugs, verbose=False)
 
 
 @pytest.fixture
@@ -78,9 +82,9 @@ def model(profiles):
 
 
 class TestBuildCriticProfiles:
-    def test_returns_critic_profiles(self, reviews_df, movies_df):
+    def test_returns_critic_profiles(self, reviews_df, close_date_map):
         slugs = [f"movie_{i}" for i in range(5)]
-        profiles = build_critic_profiles(reviews_df, movies_df, slugs, verbose=False)
+        profiles = build_critic_profiles(reviews_df, close_date_map, slugs, verbose=False)
         assert isinstance(profiles, CriticProfiles)
         assert profiles.training_slug_count == 5
 
@@ -96,15 +100,15 @@ class TestBuildCriticProfiles:
         assert (profiles.df["fresh_rate"] >= 0).all()
         assert (profiles.df["fresh_rate"] <= 1).all()
 
-    def test_verbose_false_suppresses_output(self, reviews_df, movies_df, capsys):
+    def test_verbose_false_suppresses_output(self, reviews_df, close_date_map, capsys):
         slugs = [f"movie_{i}" for i in range(5)]
-        build_critic_profiles(reviews_df, movies_df, slugs, verbose=False)
+        build_critic_profiles(reviews_df, close_date_map, slugs, verbose=False)
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    def test_verbose_true_prints_output(self, reviews_df, movies_df, capsys):
+    def test_verbose_true_prints_output(self, reviews_df, close_date_map, capsys):
         slugs = [f"movie_{i}" for i in range(5)]
-        build_critic_profiles(reviews_df, movies_df, slugs, verbose=True)
+        build_critic_profiles(reviews_df, close_date_map, slugs, verbose=True)
         captured = capsys.readouterr()
         assert "[profiles]" in captured.out
 

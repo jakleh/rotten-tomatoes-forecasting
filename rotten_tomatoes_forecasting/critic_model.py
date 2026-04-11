@@ -79,7 +79,7 @@ class KDELambdaModel:
 
 def build_critic_profiles(
     reviews_df: pd.DataFrame,
-    movies_df: pd.DataFrame,
+    close_date_map: dict[str, pd.Timestamp],
     training_slugs: list[str],
     verbose: bool = True,
 ) -> CriticProfiles:
@@ -90,7 +90,7 @@ def build_critic_profiles(
     train = reviews_df[reviews_df["movie_slug"].isin(training_slugs)].copy()
 
     # Join bet close date and compute days before close
-    close_map = movies_df.set_index("Slug")["Bet Close Date"]
+    close_map = pd.Series(close_date_map)
     train["bet_close"] = train["movie_slug"].map(close_map)
     train["days_before_close"] = (
         train["bet_close"] - train["estimated_timestamp"]

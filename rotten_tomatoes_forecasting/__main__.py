@@ -77,7 +77,8 @@ def main():
             training_slugs = default_training_slugs(movies_df, exclude_slug=args.movie_slug)
 
         # Build model
-        profiles = build_critic_profiles(reviews_df, movies_df, training_slugs)
+        close_date_map = movies_df.set_index("Slug")["Bet Close Date"].to_dict()
+        profiles = build_critic_profiles(reviews_df, close_date_map, training_slugs)
         model = build_kde_lambda_model(profiles, shrinkage_k=args.shrinkage_k)
 
         # Get observed state from DB
