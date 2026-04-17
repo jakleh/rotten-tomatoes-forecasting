@@ -18,9 +18,7 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 ├── rotten_tomatoes_forecasting/                # The package
 │   ├── __init__.py             # Public API: 8 symbols + __version__
 │   ├── edge.py                 # compute_edge(), naive_lambda(), naive_p_fresh(), EdgeResult
-│   ├── critic_model.py         # KDE model: CriticProfiles, KDELambdaModel, estimate_lambda, estimate_p_fresh, etc.
-│   ├── _db.py                  # DB convenience functions (CLI only, not public API)
-│   └── __main__.py             # CLI entry point (python -m rotten_tomatoes_forecasting)
+│   └── critic_model.py         # KDE model: CriticProfiles, KDELambdaModel, estimate_lambda, estimate_p_fresh, etc.
 ├── pyproject.toml              # Dependencies (uv managed), package config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
@@ -61,16 +59,16 @@ from rotten_tomatoes_forecasting import (
 ```
 
 **Internal (not re-exported, accessible via submodule):**
-- `rotten_tomatoes_forecasting._db.get_movie_state()` — DB query, CLI convenience only
-- `rotten_tomatoes_forecasting._db.get_observed_critics()` — DB query, CLI convenience only
 - `rotten_tomatoes_forecasting.edge.naive_lambda()`, `naive_p_fresh()` — v1 fallback estimators
 - `rotten_tomatoes_forecasting.critic_model._compute_scaling()`, `_blended_integral()`, etc. — internal helpers
+
+This library is pure DataFrame-in / numbers-out. It does NOT access a database. Callers own DB access and pass review DataFrames to the public API. See `~/Desktop/kalshi-trading/src/series/rotten_tomatoes/db.py` for the reference consumer.
 
 ## Tech Stack
 
 - **Language**: Python >= 3.13
 - **Package manager**: uv
-- **Database**: Neon (serverless PostgreSQL) via SQLAlchemy + psycopg2-binary (CLI only)
+- **Database**: No direct DB access. Consumers own DB reads. Notebooks use SQLAlchemy + psycopg2-binary for ad-hoc analysis.
 - **Analysis**: pandas, numpy, scipy, matplotlib
 - **Notebooks**: Jupyter via ipykernel
 
@@ -88,22 +86,15 @@ pip install -e ~/Desktop/rotten-tomatoes-forecasting
 ## How to Run
 
 ```bash
-# CLI with naive defaults
-DATABASE_URL="postgresql://..." uv run python -m rotten_tomatoes_forecasting <movie_slug> <threshold> <market_price> <hours_to_close>
-
-# CLI with custom parameter estimates
-DATABASE_URL="postgresql://..." uv run python -m rotten_tomatoes_forecasting <movie_slug> <threshold> <market_price> <hours_to_close> --lambda 1.5 --p-fresh 0.72
-
-# CLI with per-critic KDE model (requires reviews.csv at project root)
-DATABASE_URL="postgresql://..." uv run python -m rotten_tomatoes_forecasting <movie_slug> <threshold> <market_price> <hours_to_close> --kde
-
 # Launch notebooks
 DATABASE_URL="postgresql://..." uv run jupyter notebook
 ```
 
+Consumers (e.g., `~/Desktop/kalshi-trading/`) import the public API and pass review DataFrames to functions like `compute_edge` and `build_critic_profiles`.
+
 ## Database Connection
 
-The CLI's `_db` functions connect to the same Neon PostgreSQL instance used by the scraper. Connection is via `DATABASE_URL` environment variable. The core API functions (`compute_edge`, `estimate_lambda`, etc.) have zero DB dependency -- they take DataFrames and return values.
+The library itself does NOT connect to a database. Notebooks and consumers that need the reviews table use SQLAlchemy directly via `DATABASE_URL`.
 
 - Neon cold-starts take ~1-3s on first connection
 - `sslmode=require` is needed for Neon connections

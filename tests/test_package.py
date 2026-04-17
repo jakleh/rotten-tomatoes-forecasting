@@ -59,11 +59,6 @@ class TestSubmoduleAccess:
         assert callable(_blended_integral)
         assert callable(_compute_scaling)
 
-    def test_db_module(self):
-        from rotten_tomatoes_forecasting._db import get_movie_state, get_observed_critics
-        assert callable(get_movie_state)
-        assert callable(get_observed_critics)
-
 
 class TestCrossRepoImport:
     """Simulate how the orchestrator imports rotten_tomatoes_forecasting."""

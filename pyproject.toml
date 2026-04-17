@@ -27,6 +27,3 @@ packages = ["rotten_tomatoes_forecasting"]
 dev = [
     "pytest>=9.0.3",
 ]
-
-[project.scripts]
-rotten-tomatoes-forecasting = "rotten_tomatoes_forecasting.__main__:main"
