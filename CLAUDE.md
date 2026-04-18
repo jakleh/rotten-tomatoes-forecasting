@@ -24,8 +24,10 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
 ├── BACKLOG.md                  # Model validation and improvement priorities
 ├── PROMPTS.md                  # Handoff prompts for new conversations
+├── PARAMETERS.md               # All tunable parameters + pending-integration values
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
+├── movies_index.csv            # Movie slugs + bet close dates (gitignored)
 ├── notebooks/                  # Model validation notebooks
 │   ├── critic_model_validation.ipynb    # KDE model validation on historical movies
 │   ├── kde_lambda_calibration.ipynb     # Volume prediction gut-checks for KDE model
@@ -34,10 +36,14 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── dataset_survey.ipynb             # Broad dataset exploration
 │   ├── misprice_backtest.ipynb          # Deterministic bounds backtest (led to KDE approach)
 │   ├── misprice_backtest_deep_dive.ipynb  # Clean-data movie deep dive
-│   └── poisson_binomial_threshold.ipynb   # Original probability model
+│   ├── poisson_binomial_threshold.ipynb   # Original probability model
+│   ├── stratified_training_validation.ipynb  # Stratified training + bandwidth cap + piecewise + Phase A/B (74 cells)
+│   └── .cache/                          # LOO results caches (gitignored)
 ├── findings/                   # Model validation findings
 │   ├── critic_kde_model_validation.md   # KDE model accuracy (lambda, p_fresh, calibration)
-│   └── kalshi_rt_contract_rules.md      # Contract rules: resolution, position limits, fallbacks
+│   ├── kalshi_rt_contract_rules.md      # Contract rules: resolution, position limits, fallbacks
+│   ├── embargo_anchor_investigation.md  # Embargo-anchor rebuild: rejected (2026-04-17)
+│   └── stratified_training_investigation.md  # Current validated stack: combined_score + ceil=0.7 + piecewise (F=1.0)
 ├── rt-rules-contract.pdf       # Kalshi RT contract rules (source document)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Model design brainstorms (gitignored)

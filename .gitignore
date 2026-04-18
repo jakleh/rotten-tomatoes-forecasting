@@ -11,5 +11,6 @@ movies_index.csv
 brainstorm/
 plans/
 notebooks/dataset_survey_files/
+notebooks/.cache/
 rt-rules-contract.pdf
 build/

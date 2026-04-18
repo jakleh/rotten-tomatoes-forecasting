@@ -180,7 +180,16 @@ def build_kde_lambda_model(
     bandwidth_floor: float = 0.5,
     verbose: bool = True,
 ) -> KDELambdaModel:
-    """Fit KDEs to timing data from critic profiles. Returns a model that can estimate lambda."""
+    """Fit KDEs to timing data from critic profiles. Returns a model that can estimate lambda.
+
+    Note on `bandwidth_floor`: the default 0.5d is calibrated for a cohort that is ~98%
+    day-level timestamps (review estimated_timestamps round to midnight UTC). This bound
+    reflects within-day measurement uncertainty. As cohort granularity improves (more
+    h/m-confidence reviews from live-tracking), the floor should be lowered. There is
+    currently no explicit upper cap — Scott's rule from scipy can produce effective
+    bandwidths of 2-3 days for sparse, spread-out per-critic data, which over-smooths
+    across days. A bandwidth ceiling is tracked in BACKLOG.md \u00a71.4.
+    """
     # Pool all timing data for population prior
     all_timing = np.concatenate(profiles.df["timing_data"].values)
     population_prior = _fit_population_prior(all_timing)
