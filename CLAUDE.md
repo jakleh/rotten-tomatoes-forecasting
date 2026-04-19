@@ -45,16 +45,26 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 ## File Structure
 
 ```
-├── rotten_tomatoes_forecasting/                # The package
-│   ├── __init__.py             # Public API: 8 symbols + __version__
+├── rotten_tomatoes_forecasting/                # The package (v0.2.0, Ridge lambda model)
+│   ├── __init__.py             # Public API + __version__
 │   ├── edge.py                 # compute_edge(), naive_lambda(), naive_p_fresh(), EdgeResult
-│   └── critic_model.py         # KDE model: CriticProfiles, KDELambdaModel, estimate_lambda, estimate_p_fresh, etc.
-├── pyproject.toml              # Dependencies (uv managed), package config
+│   ├── lambda_model.py         # Ridge model: fit_lambda_regressor, estimate_lambda,
+│   │                           #   compute_close_day_phase2, save/load_regressor,
+│   │                           #   load_default_regressor, LambdaRegressor, LambdaPrediction
+│   ├── features.py             # extract_lambda_features (17 features), apply_noon_shift,
+│   │                           #   midnight_et_of_close, FEATURE_NAMES
+│   ├── pool.py                 # A1 pool context + shared base_rate primitive
+│   ├── p_fresh.py              # estimate_p_fresh (migrated from critic_model.py)
+│   └── _artifacts/             # Shipped fit artifacts
+│       └── default_regressor.json   # Default LambdaRegressor JSON (~23KB)
+├── scripts/
+│   └── fit_default_regressor.py     # Refit script for the shipped artifact
+├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
 ├── BACKLOG.md                  # Model validation and improvement priorities
 ├── PROMPTS.md                  # Handoff prompts for new conversations
-├── PARAMETERS.md               # All tunable parameters + pending-integration values
+├── PARAMETERS.md               # All tunable parameters (0.2.0 Ridge)
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Movie slugs + bet close dates (gitignored)
@@ -92,28 +102,27 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 └── brainstorm/                 # Model design brainstorms (gitignored)
 ```
 
-## Public API (0.1.x — **being replaced at 0.2.0**; see Current Conventions and `plans/plan_ridge_integration.md`)
-
-The API below is what's currently in the library. At 0.2.0 the KDE path is replaced entirely by a Ridge regression architecture; do NOT implement new work against this API expecting it to survive.
+## Public API (0.2.0)
 
 ```python
 from rotten_tomatoes_forecasting import (
-    compute_edge,           # Pure math: 7 inputs -> EdgeResult dict  (UNCHANGED at 0.2.0)
-    build_critic_profiles,  # DataFrame -> CriticProfiles             (REMOVED at 0.2.0)
-    build_kde_lambda_model, # CriticProfiles -> KDELambdaModel         (REMOVED at 0.2.0)
-    estimate_lambda,        # Model + observed state -> float           (SIGNATURE CHANGES at 0.2.0 — see plan §3.2)
-    estimate_p_fresh,       # Profiles + observed state -> float        (UNCHANGED at 0.2.0, moves to p_fresh.py)
-    default_training_slugs, # DataFrame -> list of slugs                (INTERNAL at 0.2.0)
-    CriticProfiles,         # Dataclass: per-critic base rates, etc.    (REMOVED at 0.2.0)
-    KDELambdaModel,         # Dataclass: KDE-based lambda estimator     (REMOVED at 0.2.0)
+    compute_edge,               # Pure math: 7 inputs -> EdgeResult dict
+    estimate_lambda,            # LambdaRegressor + features + snap_days + close_ts -> LambdaPrediction
+    estimate_p_fresh,           # reviews_df + training_slugs + observed state -> float
+    fit_lambda_regressor,       # Cohort -> LambdaRegressor (5-snap × α CV × LOO fit)
+    load_default_regressor,     # Load shipped artifact from _artifacts/default_regressor.json
+    extract_lambda_features,    # 17-feature vector per (target, snap) under ET-midnight convention
+    compute_close_day_phase2,   # Dynamic phase-2 hours + count for close_ts (DST-aware)
+    LambdaRegressor,            # Dataclass: fitted Ridge per snap + residuals + metadata
+    LambdaPrediction,           # Dataclass: rate_per_hour + phase1/phase2/total + p90|err|
+    naive_lambda, naive_p_fresh,  # v1 fallback estimators
 )
 ```
 
-**At 0.2.0 the public API becomes** (per `plans/plan_ridge_integration.md` §3.1): `compute_edge`, `estimate_lambda`, `estimate_p_fresh`, `fit_lambda_regressor`, `load_default_regressor`, `extract_lambda_features`, `compute_close_day_phase2`, `LambdaRegressor`, `LambdaPrediction`, `naive_lambda`, `naive_p_fresh`.
-
 **Internal (not re-exported, accessible via submodule):**
-- `rotten_tomatoes_forecasting.edge.naive_lambda()`, `naive_p_fresh()` — v1 fallback estimators
-- `rotten_tomatoes_forecasting.critic_model._compute_scaling()`, `_blended_integral()`, etc. — internal helpers (removed at 0.2.0)
+- `rotten_tomatoes_forecasting.lambda_model.SnapModel`, `LambdaRegressorMetadata`, `save_regressor`, `load_regressor` — artifact plumbing.
+- `rotten_tomatoes_forecasting.pool.A1Context`, `build_a1_pool_context`, `compute_critic_base_rates` — pool primitives used by `extract_lambda_features` and `estimate_p_fresh`.
+- `rotten_tomatoes_forecasting.features.FEATURE_NAMES`, `VALID_SNAP_DAYS`, `midnight_et_of_close`, `apply_noon_shift` — extraction helpers + constants.
 
 This library is pure DataFrame-in / numbers-out. It does NOT access a database. Callers own DB access and pass review DataFrames to the public API. See `~/Desktop/kalshi-trading/src/series/rotten_tomatoes/db.py` for the reference consumer.
 
@@ -143,7 +152,7 @@ pip install -e ~/Desktop/rotten-tomatoes-forecasting
 DATABASE_URL="postgresql://..." uv run jupyter notebook
 ```
 
-Consumers (e.g., `~/Desktop/kalshi-trading/`) import the public API and pass review DataFrames to functions like `compute_edge` and `build_critic_profiles`.
+Consumers (e.g., `~/Desktop/kalshi-trading/`) import the public API and pass review DataFrames to functions like `compute_edge`, `extract_lambda_features`, and `estimate_lambda`.
 
 ## Database Connection
 
@@ -183,7 +192,7 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 - **Tomatometer score** = count of "positive" sentiment / total reviews for a movie
 - **Deduplication**: Each review appears exactly once (enforced by UNIQUE on `unique_review_id`)
 - **Two-pass scraping**: The scraper runs `top-critics` then `all-critics` filters. A review scraped as a top critic has `top_critic = True`. The same review is NOT duplicated when scraped again in the all-critics pass (dedup catches it).
-- **Timestamp precision varies**: "m"-confidence timestamps are accurate to ~1 minute, "h" to ~1 hour, "d" to ~1 day. KDE-based analysis should be aware of this noise.
+- **Timestamp precision varies**: "m"-confidence timestamps are accurate to ~1 minute, "h" to ~1 hour, "d" to ~1 day. Day-level reviews land at midnight UTC by default; `apply_noon_shift` centers them mid-day so they don't all cluster on day boundaries.
 - **Scrape frequency**: Every 50 minutes. Reviews with relative timestamps ("5m", "3h") get more precise `estimated_timestamp` values than date-format ones ("Mar 20").
 - **Movies tracked**: Configured in the scraper's `movies.json`. All ~143 movies that had Kalshi RT markets have been backfilled. Originally live-tracked (with minute-level timestamps): `project_hail_mary`, `ready_or_not_2_here_i_come`, `forbidden_fruits_2026`, `they_will_kill_you`, `the_drama`, `the_super_mario_galaxy_movie`.
 
@@ -199,28 +208,32 @@ The Poisson-binomial betting function. Computes P(final score crosses threshold)
 
 **Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable.
 
-## Per-Critic KDE Model: `rotten_tomatoes_forecasting/critic_model.py` (being replaced at 0.2.0)
+## Ridge Lambda Model: `rotten_tomatoes_forecasting/lambda_model.py`
 
-> **This section describes the current 0.1.x architecture, which is replaced entirely by Ridge regression at 0.2.0** per `plans/plan_ridge_integration.md`. The per-critic KDE has an architectural ceiling on critic-magnet / late-surge movies (`findings/path_b_lite_investigation.md` §8); Ridge bypasses the `base_rate × KDE × exclusion` sum by regressing directly on observation-window features and wins cohort MAE by 15-58% across horizons. Kept here for accuracy about the live code.
+Replaces the per-critic KDE architecture (0.1.x). Per-snap Ridge regression on 17 features predicts phase-1 review volume; phase-2 is a DST-aware close-day constant.
 
-Replaces naive lambda/p_fresh with estimators grounded in per-critic historical data. Three layers:
+1. **`extract_lambda_features`** (`features.py`) — builds a 17-feature vector for one (target, snap): 10 observation-window statistics (counts, rates, top-critic fraction, publication diversity/entropy, low-activity critic fraction), 4 nonlinear transforms of the dominant count/rate features, and 3 finite-pool aggregates (`remaining_base_rate_sum`, `pool_mass_consumed`, `observed_top_tier_frac`) computed against the LOO-clean A1 pool (20 most recent resolved movies before target close).
+2. **`fit_lambda_regressor`** (`lambda_model.py`) — for each snap in `{1, 2, 3, 4, 5}`: feature extraction across the cohort, 5-fold CV α selection over `{0.01, 0.1, 1, 10, 100, 1000}`, LOO residual capture, then a full-cohort fit. Produces a `LambdaRegressor` with per-snap `SnapModel` (scaler stats + ridge coefficients + intercept + α) and metadata (fit date, cohort size, sklearn version, phase-2 C).
+3. **`estimate_lambda`** (`lambda_model.py`) — scores a feature row through the snap's `SnapModel`, adds `compute_close_day_phase2(close_ts, C)` for the close-day window (DST-aware), and returns a `LambdaPrediction` with the full phase-1 / phase-2 / total breakdown, rate-per-hour, and a p90|err| estimate from training LOO residuals.
+4. **`estimate_p_fresh`** (`p_fresh.py`) — base_rate-weighted average of remaining critic fresh rates, blended with the running observed rate (prior sample size `n_prior=20`). Behavior unchanged from 0.1.x; takes `reviews_df` + `training_slugs` explicitly instead of the removed `CriticProfiles`.
 
-1. **CriticProfiles** — per-critic base_rate (P(reviews this movie)), fresh_rate, and timing_data (days-before-close). Built from training set of 20 most recent resolved movies.
-2. **KDELambdaModel** — fits Gaussian KDEs to each critic's timing data. Expected remaining reviews = sum of base_rate x KDE integral for unreviewed critics. Scaled in real-time via observed/expected ratio. Sparse critics (0-1 reviews) and degenerate KDEs (zero variance) fall back to a population prior with shrinkage (k=3, bandwidth floor 0.5d).
-3. **estimate_p_fresh()** — base_rate-weighted average of remaining critic fresh rates, blended with movie's running observed rate (prior sample size n=20). No KDEs involved.
+**Artifact.** Ships at `_artifacts/default_regressor.json` (~23KB). Version-agnostic JSON (not pickle) — reconstructs `SnapModel` dataclasses at load time. Re-fittable via `scripts/fit_default_regressor.py`.
 
-**Key functions:** `build_critic_profiles()`, `build_kde_lambda_model()`, `estimate_lambda()`, `estimate_p_fresh()`, `default_training_slugs()`.
+**Performance vs 0.1.x KDE baseline** (cohort LOO, ET-midnight convention):
+- T-5d: 37.96 → 32.14 MAE (+15%), mean_err -17.19 → -0.45
+- T-3d: 17.86 → 9.96 MAE (+44%), mean_err -9.58 → -0.01
+- T-1d: 3.87 → 2.22 MAE (+43%), mean_err +2.73 → -0.03
 
-**Design:** See `plans/plan_critic_kde_lambda.md` for the full spec and `brainstorm/brainstorm_critic_kde_lambda.md` for design rationale. Validated in `notebooks/critic_model_validation.ipynb`.
+See `findings/ridge_lambda_investigation.md` for the full validation and `plans/plan_ridge_integration.md` for integration rationale.
 
 **What was tried and why alternatives were abandoned:**
-- *Deterministic bounds (worst/best case from remaining reviews)*: Too conservative -- by the time bounds lock the outcome, the market has already corrected. See `notebooks/misprice_backtest.ipynb`.
-- *Market-price-only strategies (spike detection, anomaly reversion)*: Require the structural model first to define "fair value."
+- *KDE per-critic model* (0.1.x): architectural ceiling on critic-magnet / late-surge movies — 14 interventions couldn't break through. Ridge bypasses the `base_rate × KDE × exclusion` sum by regressing directly on observable features. See `findings/path_b_lite_investigation.md`.
+- *Deterministic bounds (worst/best case)*: too conservative; by the time bounds lock the outcome the market has already corrected. See `notebooks/misprice_backtest.ipynb`.
 
 ## Known Issues
 
-**Close-day lambda bias (0.1.x):** The 0.1.x KDE drops close-day reviews because of a UTC midnight vs. actual close time mismatch. See `brainstorm/brainstorm_close_day_lambda_bias.md`. **Resolved at 0.2.0** by the explicit phase-1 / phase-2 decomposition in the Ridge model: Ridge predicts phase-1 (`snap → midnight ET on close day`) and `compute_close_day_phase2(close_ts, C=1)` handles the close-day window. No close-day review is silently dropped.
+**Historical notebooks + `_helpers.py` assume 0.1.x KDE.** `notebooks/_helpers.py` and most of the KDE-era notebooks (`stratified_training_validation.ipynb`, `path_b_lite_weighted_kde.ipynb`, `critic_model_validation.ipynb`, etc.) import `rotten_tomatoes_forecasting.critic_model`, which was removed at 0.2.0. These are retained as preserved historical validation artifacts (with CONVENTION WARNING banners) and are not expected to re-run against 0.2.0 — to replay one, check out an earlier commit where `critic_model.py` still exists. The Ridge-era notebooks (`phase1_ridge_tier2.ipynb`, `proposed_ship_stack_test.ipynb`) also import `_helpers` today and inherit that breakage; recreating their results under 0.2.0 is a separate exercise against the new public API.
 
 ## Dependencies
 
-`pyproject.toml`: sqlalchemy, psycopg2-binary, pandas, numpy, scipy, matplotlib, ipykernel, scikit-learn (added for Ridge at 0.2.0).
+`pyproject.toml`: sqlalchemy, psycopg2-binary, pandas, numpy, scipy, matplotlib, ipykernel, scikit-learn.

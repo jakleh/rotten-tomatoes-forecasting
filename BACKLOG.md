@@ -6,18 +6,19 @@ Priorities for the rotten-tomatoes-forecasting forecasting library. Strategy, ba
 
 ## 1. Active work
 
-### 1.1 Ridge lambda integration (primary, in progress — see `plans/plan_ridge_integration.md`)
+### 1.1 Ridge lambda integration — SHIPPED at 0.2.0
 
-Per `findings/ridge_lambda_investigation.md`, ship lambda estimator is Ridge regression on 17 features. Replaces the KDE-based `estimate_lambda` entirely at 0.2.0 (breaking API bump).
+Per `findings/ridge_lambda_investigation.md`, Ridge regression on 17 features replaced the KDE-based `estimate_lambda` entirely. Library version 0.2.0.
 
-**Ship spec:**
-- Model: `StandardScaler → Ridge(α=snap-specific)` pipeline. α via 5-fold CV per snap over {0.01, 0.1, 1, 10, 100, 1000}. Validated α*: 10 for T-3d/T-4d; 100 for T-5d/T-2d/T-1d.
-- Features (17): 10 observation-window + 4 nonlinear transforms + 3 finite-pool aggregates. Full list in `findings/ridge_lambda_investigation.md` §4.1.
-- Base_rate source for finite-pool features: A1 pool (20 most recent resolved movies before target close, LOO-clean).
-- **Snap / phase convention: Eastern-midnight** anchored. Snap at midnight ET on close−N. Phase-1 = (midnight ET close, snap_time]. Phase-2 constant `C = 1` over (midnight ET close, close_ts] ≈ 10h. See `CLAUDE.md` "Current Conventions" + `plans/plan_ridge_integration.md` §3.6–§3.7.
-- Artifact: JSON at `_artifacts/default_regressor.json`. NOT pickle.
+**Shipped spec:**
+- Model: `StandardScaler → Ridge(α=snap-specific)` pipeline. α via 5-fold CV per snap over {0.01, 0.1, 1, 10, 100, 1000}. Fit α on the shipped 144-movie cohort: **T-5d=100, T-4d=10, T-3d=10, T-2d=100, T-1d=100**.
+- Features (17): 10 observation-window + 4 nonlinear transforms + 3 finite-pool aggregates. `rotten_tomatoes_forecasting.features.FEATURE_NAMES`.
+- Base_rate source for finite-pool features: A1 pool (20 most recent resolved movies before target close, LOO-clean). `rotten_tomatoes_forecasting.pool.build_a1_pool_context`.
+- Snap / phase convention: **Eastern-midnight** anchored. Snap at midnight ET on close−N. Phase-1 = (midnight ET close, snap_time]. Phase-2 constant `C = 1` over (midnight ET close, close_ts] ≈ 10h (DST-aware). `compute_close_day_phase2`.
+- Artifact: JSON at `rotten_tomatoes_forecasting/_artifacts/default_regressor.json` (~23KB). Re-fittable via `scripts/fit_default_regressor.py`.
+- Public API changes: removed `CriticProfiles`, `KDELambdaModel`, `build_critic_profiles`, `build_kde_lambda_model`, `default_training_slugs`. Added `fit_lambda_regressor`, `load_default_regressor`, `extract_lambda_features`, `compute_close_day_phase2`, `LambdaRegressor`, `LambdaPrediction`.
 
-**Performance vs current library 0.1.x (cohort LOO):**
+**Performance vs 0.1.x (cohort LOO, ET-midnight convention):**
 ```
 snap   library MAE   ridge_t2 MAE    Δ%      library me   ridge_t2 me
 T-5d     37.96         32.14        +15%      -17.19       -0.45
@@ -27,18 +28,22 @@ T-2d      8.14          3.42        +58%       +6.51       -0.02
 T-1d      3.87          2.22        +43%       +2.73       -0.03
 ```
 
-**Integration:** `plans/plan_ridge_integration.md`, phases A-E library-side (~4 days), Phase F orchestrator migration. Version 0.1.0 → 0.2.0.
+**Follow-ups:**
+- Phase F (orchestrator migration) is a separate effort in `~/Desktop/kalshi-trading/`. Reference migration example in `plans/plan_ridge_integration.md` §6.
 
-### 1.2 Test suite expansion for 0.2.0
+### 1.2 Test suite for 0.2.0 — DONE
 
-Current `tests/` has ~58 tests covering 0.1.x. At 0.2.0 the new surface needs test coverage per `plans/plan_ridge_integration.md` §8.1:
+98 tests cover the new surface per `plans/plan_ridge_integration.md` §8.1:
 
-- `test_lambda_model.py` — load/fit/predict/calibration/skip-rule/snap_days-range/composition-arithmetic/artifact-json-roundtrip/sklearn-version-tolerance/DST-edge-cases.
-- `test_features.py` — feature parity with notebook, noon-shift idempotency, pool-LOO-cleanliness, sparse cohort handling, skip-rule edge cases.
-- `test_pool.py` — A1 pool build, base_rate primitive, top-tier determinism.
-- `test_calibration_regression.py` — shipped artifact cohort mean_err stays near 0; h/m composition MAE stays tight at T-2d/T-1d.
+- `tests/test_package.py` — public API re-exports + removal of KDE symbols.
+- `tests/test_edge.py` — unchanged; compute_edge math.
+- `tests/test_pool.py` — A1 pool build, base-rate primitive, top-tier determinism.
+- `tests/test_features.py` — 17-feature extraction, noon-shift, midnight-ET helper, skip-rule coverage, and **parity** against 5 hardcoded (slug, snap) feature vectors from `notebooks/proposed_ship_stack_test.ipynb` (skips gracefully when cohort CSVs are gitignored-absent).
+- `tests/test_lambda_model.py` — fit/predict, phase-2 C / DST-spring / DST-fall / non-10am closes, composition arithmetic, JSON round-trip, shipped-artifact load + predict.
+- `tests/test_p_fresh.py` — prior / blend / fallback behavior.
 
-Lands alongside Phase B/C of the integration plan.
+Not yet in place (deferred from plan §8.1 because LOO residual-replay against the full cohort is expensive and belongs in a separate nightly job if needed):
+- `test_calibration_regression.py` — shipped artifact cohort mean_err / h/m composition MAE sanity. Defer until we have a lightweight fixture to avoid re-loading reviews.csv in unit tests.
 
 ### 1.3 CI
 
