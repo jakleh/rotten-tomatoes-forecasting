@@ -21,7 +21,7 @@ All tunable parameters in the library, grouped by component. Parameters currentl
 |---|---|---|---|
 | `n` (training) | 20 | `critic_model.default_training_slugs()` | Same training pool as p_fresh. Determines which movies' review timing data gets used to fit critic KDEs. |
 | `shrinkage_k` | 3.0 | `critic_model.build_kde_lambda_model()` | Shrinkage toward population prior. Each critic's KDE is blended: `(n/(n+k)) * empirical + (k/(n+k)) * population`. At k=3, a critic with 3 reviews gets 50/50 blend; with 10 reviews, 77% empirical. |
-| `bandwidth_floor` | 0.5 days | `critic_model.build_kde_lambda_model()` | Minimum KDE bandwidth. Prevents overfitting to tight clusters of review times. If a critic's Scott's-rule bandwidth falls below this, it's forced up. Calibrated for a cohort that is ~98% day-level timestamps (see BACKLOG.md §1.4). |
+| `bandwidth_floor` | 0.5 days | `critic_model.build_kde_lambda_model()` | Minimum KDE bandwidth. Prevents overfitting to tight clusters of review times. If a critic's Scott's-rule bandwidth falls below this, it's forced up. Calibrated for a cohort that is ~98% day-level timestamps. (KDE architecture is being replaced at 0.2.0 — see BACKLOG §3.3 MOOT.) |
 | `scaling_threshold` | 40 | `critic_model._compute_scaling()` (hardcoded) | Minimum expected reviews before observed/expected scaling is applied. Below this (common at T-7d+ where KDE tail mass is thin), scaling is unreliable so the ratio is forced to 1.0. Relaxed-scaling test falsified the hypothesis that this should be lower (findings §9.3). |
 | `scaling_clamp` | (0.5, 2.0) | `critic_model._compute_scaling()` (hardcoded) | Bounds on the observed/expected scaling ratio. Prevents wild overcorrection when the KDE expectations are far off. Lower clamp barely binds (0-10%); upper clamp binds 14-38% but loosening doesn't help. |
 
@@ -117,7 +117,7 @@ Per `brainstorm/brainstorm_pre_ship_tuning.md` and `PROMPTS.md` Prompt 4. The pr
 - **`σ_gap`** — sweep ∈ {2, 4, 8, 16, ∞} at T-3d/T-5d/T-7d full window. σ_gap→0 is equivalent to `gap_overlap_ranked` (exact-match filter); σ_gap=8 is current recommendation. Decision rule: ≥3% T-3d MAE improvement with bootstrap CI95 lower > 0 → replace.
 - **`k` (n_training)** — sweep ∈ {5, 10, 15, 20, 25, 30, 50} using σ_gap winner. Decision rule: same.
 - **`F`** — RESOLVED 2026-04-18 via G1 audit (findings §17): F × count form replaced by constant C=2. See "Close-day piecewise patch" table above.
-- **Re-pick frequency** (backtest methodology) — measure MAE-vs-rebuild-frequency curve on h/m target movies. Informs but does not set the live-deployment trigger (which lives in the orchestrator per BACKLOG.md §1.6).
+- **Re-pick frequency** (backtest methodology) — measure MAE-vs-rebuild-frequency curve on h/m target movies. This was a KDE-era concern (per-target profile rebuilds were expensive). Under Ridge at 0.2.0 this is largely moot — one `LambdaRegressor` artifact at release time applies to all targets. See BACKLOG §3.5 (LARGELY MOOT UNDER RIDGE).
 
 Out of scope for this pass: **`α`** tuning (plateau too flat, keep at 0.5 per findings §10.7).
 

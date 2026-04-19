@@ -58,45 +58,62 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Movie slugs + bet close dates (gitignored)
-├── notebooks/                  # Model validation notebooks
-│   ├── critic_model_validation.ipynb    # KDE model validation on historical movies
-│   ├── kde_lambda_calibration.ipynb     # Volume prediction gut-checks for KDE model
-│   ├── critics_index.ipynb              # Critic frequency analysis and KDE prototyping
-│   ├── parameter_exploration.ipynb      # Lambda + p_fresh estimator workspace
-│   ├── dataset_survey.ipynb             # Broad dataset exploration
-│   ├── misprice_backtest.ipynb          # Deterministic bounds backtest (led to KDE approach)
-│   ├── misprice_backtest_deep_dive.ipynb  # Clean-data movie deep dive
-│   ├── poisson_binomial_threshold.ipynb   # Original probability model
-│   ├── stratified_training_validation.ipynb  # Stratified training + bandwidth cap + piecewise + Phase A/B (74 cells)
-│   └── .cache/                          # LOO results caches (gitignored)
+├── notebooks/                  # Model validation notebooks (30+ files; dir is self-describing)
+│   # Ship-candidate validation (current):
+│   ├── phase1_three_way.ipynb              # Library v0.1 vs ship-stack KDE vs Ridge headline comparison
+│   ├── phase1_ridge_tier1.ipynb            # Ridge tier-1: standardize + log/sqrt transforms + α CV
+│   ├── phase1_ridge_tier2.ipynb            # Ridge tier-2: finite-pool features (ship candidate basis)
+│   ├── phase1_ridge_tier2b_a3gap.ipynb     # Ridge tier-2 with A3-gap pool (equivalent to tier 2)
+│   ├── phase1_ridge_tier2c_recent_gap.ipynb # Ridge tier-2 with hybrid recent+gap pool (equivalent)
+│   ├── proposed_ship_stack_test.ipynb      # Ridge refit under ET-midnight convention + C=1 decision
+│   ├── time_series_regression.ipynb        # Original Ridge vs KDE exploration (path_b_lite §9)
+│   # Historical investigations (KDE-era, superseded — all have convention-warning banners):
+│   ├── stratified_training_validation.ipynb # Gap-stratified + bandwidth-cap era (74 cells)
+│   ├── phase1_a2_vs_a3alpha1.ipynb         # Jaccard vs gap-only selector
+│   ├── phase1_e5a_alpha_step.ipynb         # E5a sqrt base_rate (ruled out)
+│   ├── critic_model_validation.ipynb       # KDE model accuracy
+│   ├── misprice_backtest.ipynb             # Deterministic bounds baseline
+│   ├── path_b_lite_weighted_kde.ipynb      # Weighted-KDE cohort win
+│   ├── f_audit.ipynb                        # G1 phase-2 F-audit
+│   ├── _helpers.py                          # Shared helpers imported by all post-tier-1 notebooks
+│   └── .cache/                              # LOO results caches (gitignored)
 ├── findings/                   # Model validation findings
-│   ├── critic_kde_model_validation.md   # KDE model accuracy (lambda, p_fresh, calibration)
-│   ├── kalshi_rt_contract_rules.md      # Contract rules: resolution, position limits, fallbacks
-│   ├── embargo_anchor_investigation.md  # Embargo-anchor rebuild: rejected (2026-04-17)
-│   └── stratified_training_investigation.md  # Current validated stack: combined_score + ceil=0.7 + piecewise (F=1.0)
+│   # Current ship story:
+│   ├── ridge_lambda_investigation.md         # Ship candidate (ridge_t2); 3-tier optimization; pool robustness
+│   ├── trading_strategy_from_ridge_errors.md # Orchestrator-facing: snap gates, target filters, sizing
+│   # Historical (supersede-banner'd):
+│   ├── path_b_lite_investigation.md          # Path B-lite (14 KDE interventions; architectural ceiling)
+│   ├── stratified_training_investigation.md  # Stratified + bandwidth + piecewise era (superseded)
+│   ├── critic_kde_model_validation.md        # Original KDE model calibration
+│   ├── embargo_anchor_investigation.md       # Embargo-anchor rebuild (rejected 2026-04-17)
+│   └── kalshi_rt_contract_rules.md           # Contract rules: resolution, position limits, fallbacks
 ├── rt-rules-contract.pdf       # Kalshi RT contract rules (source document)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Model design brainstorms (gitignored)
 ```
 
-## Public API
+## Public API (0.1.x — **being replaced at 0.2.0**; see Current Conventions and `plans/plan_ridge_integration.md`)
+
+The API below is what's currently in the library. At 0.2.0 the KDE path is replaced entirely by a Ridge regression architecture; do NOT implement new work against this API expecting it to survive.
 
 ```python
 from rotten_tomatoes_forecasting import (
-    compute_edge,           # Pure math: 7 inputs -> EdgeResult dict
-    build_critic_profiles,  # DataFrame -> CriticProfiles
-    build_kde_lambda_model, # CriticProfiles -> KDELambdaModel
-    estimate_lambda,        # Model + observed state -> float (reviews/hr)
-    estimate_p_fresh,       # Profiles + observed state -> float
-    default_training_slugs, # DataFrame -> list of slugs
-    CriticProfiles,         # Dataclass: per-critic base rates, fresh rates, timing data
-    KDELambdaModel,         # Dataclass: KDE-based lambda estimator
+    compute_edge,           # Pure math: 7 inputs -> EdgeResult dict  (UNCHANGED at 0.2.0)
+    build_critic_profiles,  # DataFrame -> CriticProfiles             (REMOVED at 0.2.0)
+    build_kde_lambda_model, # CriticProfiles -> KDELambdaModel         (REMOVED at 0.2.0)
+    estimate_lambda,        # Model + observed state -> float           (SIGNATURE CHANGES at 0.2.0 — see plan §3.2)
+    estimate_p_fresh,       # Profiles + observed state -> float        (UNCHANGED at 0.2.0, moves to p_fresh.py)
+    default_training_slugs, # DataFrame -> list of slugs                (INTERNAL at 0.2.0)
+    CriticProfiles,         # Dataclass: per-critic base rates, etc.    (REMOVED at 0.2.0)
+    KDELambdaModel,         # Dataclass: KDE-based lambda estimator     (REMOVED at 0.2.0)
 )
 ```
 
+**At 0.2.0 the public API becomes** (per `plans/plan_ridge_integration.md` §3.1): `compute_edge`, `estimate_lambda`, `estimate_p_fresh`, `fit_lambda_regressor`, `load_default_regressor`, `extract_lambda_features`, `compute_close_day_phase2`, `LambdaRegressor`, `LambdaPrediction`, `naive_lambda`, `naive_p_fresh`.
+
 **Internal (not re-exported, accessible via submodule):**
 - `rotten_tomatoes_forecasting.edge.naive_lambda()`, `naive_p_fresh()` — v1 fallback estimators
-- `rotten_tomatoes_forecasting.critic_model._compute_scaling()`, `_blended_integral()`, etc. — internal helpers
+- `rotten_tomatoes_forecasting.critic_model._compute_scaling()`, `_blended_integral()`, etc. — internal helpers (removed at 0.2.0)
 
 This library is pure DataFrame-in / numbers-out. It does NOT access a database. Callers own DB access and pass review DataFrames to the public API. See `~/Desktop/kalshi-trading/src/series/rotten_tomatoes/db.py` for the reference consumer.
 
@@ -182,7 +199,9 @@ The Poisson-binomial betting function. Computes P(final score crosses threshold)
 
 **Where the alpha lives:** Lambda and p_fresh estimation. Everything else is observable.
 
-## Per-Critic KDE Model: `rotten_tomatoes_forecasting/critic_model.py`
+## Per-Critic KDE Model: `rotten_tomatoes_forecasting/critic_model.py` (being replaced at 0.2.0)
+
+> **This section describes the current 0.1.x architecture, which is replaced entirely by Ridge regression at 0.2.0** per `plans/plan_ridge_integration.md`. The per-critic KDE has an architectural ceiling on critic-magnet / late-surge movies (`findings/path_b_lite_investigation.md` §8); Ridge bypasses the `base_rate × KDE × exclusion` sum by regressing directly on observation-window features and wins cohort MAE by 15-58% across horizons. Kept here for accuracy about the live code.
 
 Replaces naive lambda/p_fresh with estimators grounded in per-critic historical data. Three layers:
 
@@ -200,8 +219,8 @@ Replaces naive lambda/p_fresh with estimators grounded in per-critic historical 
 
 ## Known Issues
 
-**Close-day lambda bias:** The KDE model drops close-day reviews because of a UTC midnight vs actual close time mismatch. Partial fix applied. See `brainstorm/brainstorm_close_day_lambda_bias.md` and BACKLOG.md 1.3.
+**Close-day lambda bias (0.1.x):** The 0.1.x KDE drops close-day reviews because of a UTC midnight vs. actual close time mismatch. See `brainstorm/brainstorm_close_day_lambda_bias.md`. **Resolved at 0.2.0** by the explicit phase-1 / phase-2 decomposition in the Ridge model: Ridge predicts phase-1 (`snap → midnight ET on close day`) and `compute_close_day_phase2(close_ts, C=1)` handles the close-day window. No close-day review is silently dropped.
 
 ## Dependencies
 
-`pyproject.toml`: sqlalchemy, psycopg2-binary, pandas, numpy, scipy, matplotlib, ipykernel.
+`pyproject.toml`: sqlalchemy, psycopg2-binary, pandas, numpy, scipy, matplotlib, ipykernel, scikit-learn (added for Ridge at 0.2.0).
