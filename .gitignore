@@ -14,3 +14,4 @@ notebooks/dataset_survey_files/
 notebooks/.cache/
 rt-rules-contract.pdf
 build/
+.claude/
