@@ -1,5 +1,35 @@
 # CLAUDE.md
 
+## Current Conventions (AUTHORITATIVE — read before writing any timestamp / snap / phase logic)
+
+These supersede any conflicting convention in `findings/`, `notebooks/`, `brainstorm/`, or `plans/` docs older than 2026-04-19. If a historical doc describes a different convention, that doc is outdated — this section wins. Many historical docs use UTC-midnight snap convention, 14h phase-2 window, `C=2`, or silent noon-shift — **do not copy those patterns into new code.**
+
+**Ship lambda model:** Ridge regression on 17 features (`ridge_t2` stack). Replaces the older KDE-based `estimate_lambda`. Library version 0.2.0. See `findings/ridge_lambda_investigation.md` for validation + `plans/plan_ridge_integration.md` for integration spec.
+
+**Snap convention:** midnight **ET** on close−N days (Eastern-midnight anchored). T-Nd snap = midnight ET on (close_date − N). For a typical 10am ET close, T-Nd snap is `N × 24 + 10` hours before market close.
+- Not midnight UTC. Not `close_ts − N days`.
+- DST-aware via `tz_convert('US/Eastern').normalize()`.
+
+**Phase-1 window:** `(midnight ET on close day, snap_time]`. Exactly `N × 24` hours for snap at T-Nd. Ridge predicts reviews in this window.
+
+**Phase-2 window:** `(midnight ET on close day, close_ts]`. ~10h for typical 10am ET close. 9h on DST spring-forward days, 11h on fall-back days, other values for non-10am closes (e.g., 2h for 2am ET close). Computed dynamically from `close_ts` per `compute_close_day_phase2(close_ts, C)`.
+
+**Phase-2 constant:** `C = 1.0` reviews. Empirical mean on 5 h/m targets with full scraper coverage: `{2, 1, 1, 1, 0}`. NOT `C=2` (that was an older value for a wider 14h UTC-midnight window, superseded).
+
+**Noon-shift preprocessing:** day-level reviews (`timestamp_confidence == 'd'`) shifted from midnight UTC to 12:00 UTC before profile build. Purpose: de-spike KDE boundaries and center day-level review timestamps in-day. Applied **ONCE at data ingest by the caller** — `extract_lambda_features` defaults `apply_noon_shift=False` and does not silently mutate timestamps.
+
+**`dbc` (days before close) anchor:** always measured against `close_ts` (10am ET = 14:00 UTC EDT / 15:00 UTC EST). Never against midnight of anything. `midnight_et_dbc = (close_ts − midnight_et_close).total_seconds() / 86400` ≈ 0.417 during EDT, ≈ 0.458 during EST.
+
+**Model artifact serialization:** JSON at `_artifacts/default_regressor.json`. NOT pickle (avoids sklearn version-drift risk). Contains per-snap Ridge coefficients + StandardScaler stats + LOO residuals + metadata.
+
+**Snap routing in public API:** `estimate_lambda` takes `snap_days: int` (keyword-only, values in {1, 2, 3, 4, 5}). `snap_dbc` is an internal concept only — never appears in public signatures. Out-of-range snap_days raises.
+
+**Target filter for deployment (orchestrator):** `target_gap > 15d` → skip entirely (architectural ceiling failure zone). See `findings/trading_strategy_from_ridge_errors.md` §2.3.
+
+See `plans/plan_ridge_integration.md` for the full library spec.
+
+---
+
 ## Project Overview
 
 Pure forecasting library for Rotten Tomatoes Tomatometer prediction markets. Computes the probability that a movie's final Tomatometer score crosses a given threshold, and the expected edge (in cents) against a market price.

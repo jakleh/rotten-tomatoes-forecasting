@@ -2,6 +2,8 @@
 
 All tunable parameters in the library, grouped by component. Parameters currently under active investigation (not yet in library code) are documented at the bottom under "Pending library integration."
 
+> **2026-04-19 note:** the KDE-related parameters documented in this file are **shipping out** as part of the Ridge lambda integration (`plans/plan_ridge_integration.md`). Sections below are accurate for the current (pre-0.2.0) library; post-integration this file will be rewritten around Ridge's feature list and per-snap α table. See `findings/ridge_lambda_investigation.md` for the new parameter story.
+
 ---
 
 ## Binomial parameters (p_fresh estimation)
@@ -42,7 +44,11 @@ All tunable parameters in the library, grouped by component. Parameters currentl
 
 ## Pending library integration (validated, not yet in library code)
 
-Per `findings/stratified_training_investigation.md` §10.8 and `BACKLOG.md` §1.5. These parameters are the deployment-recommended stack. All currently live in `notebooks/stratified_training_validation.ipynb` as inline helpers. Integration into library code is gated on the pre-ship tuning pass (`brainstorm/brainstorm_pre_ship_tuning.md` / `PROMPTS.md` Prompt 4) which may update these values.
+Per `findings/stratified_training_investigation.md` §10.8 and `findings/path_b_lite_investigation.md` §12. These parameters are the deployment-recommended stack. Helpers factored in `notebooks/_helpers.py`. Integration plan pending per `PROMPTS.md` Prompt 5.
+
+**Revisions since original spec (2026-04-18, per Path B-lite):**
+- **Weighted KDE build** added as a new variant — per-data-point weights = combined_score values. Validated +7.7% cohort MAE.
+- **Midnight+noon snap convention** adopted — snap_time = `midnight UTC on close-N`, day-level reviews shifted to 12:00 UTC before profile build. Clean day-boundary semantics, halved h/m bias.
 
 ### Bandwidth ceiling (new parameter on `build_kde_lambda_model`)
 
@@ -61,13 +67,16 @@ Per `findings/stratified_training_investigation.md` §10.8 and `BACKLOG.md` §1.
 | Aligned-window definition | `target_window_days = first_review_dbc_target − snap_dbc` | For each candidate, take its critics from the first `target_window_days` after that candidate's first review. Matches target's observation window length, anchored to each movie's own embargo-lift proxy. |
 | Fallback chain | `combined_score` → `matched_training_slugs(band=3.0, n=20)` → `default_training_slugs(n=20)` | Skip rule: if `first_review_dbc < snap_dbc + 1` OR `len(observed_critics) < 3`, fall back to gap-only. If that also fails, fall back to recency-only. |
 
-### Close-day piecewise patch (new helper function)
+### Close-day piecewise patch (REVISED form per G1 audit 2026-04-18)
+
+The `F × mean_close_day_count` form was replaced with a constant after the G1 audit showed it was wrong by ~4×. Findings §17 has the full story.
 
 | Parameter | Proposed value | Description |
 |---|---|---|
-| `F` | 1.0 (ship at 0.7 to hedge pull-timing bias) | Fraction of close-day reviews that arrive pre-market-close (12am UTC → 10am EST, ~14h window). Estimated from h/m close-day reviews on 4 live-tracked movies (n=21, all pre-market — possibly biased high). Piecewise T-1d MAE improvement survives across F ∈ [0.5, 1.0] (findings §8.4), so exact value isn't load-bearing. Re-tune when fresh reviews.csv with more h/m close-day movies is available. |
-| `PRE_MARKET_HOURS` | 14 | 10am EST as UTC offset. ±1h depending on DST; using 14h (EDT) as the default since DST covers most of the year. |
-| Phase 2 prediction | `F × mean(close_day_count(slug) for slug in training_slugs)` | Added on top of Phase 1 (existing snap-to-midnight-UTC prediction). Composable; retire by setting `F=0` or skipping the call entirely once h/m close-day data is sufficient for a KDE-only close-day model. |
+| Phase 1 integration bound | `dbc_to = midnight_utc_dbc` | Per-target; `midnight_utc_dbc = (close_ts − close_ts.floor('D')).total_seconds() / 86400` ≈ 0.583 for 14:00 UTC closes. **Correctness fix:** the prior implementation used `dbc_to = 0.0`, which integrated the KDE into the pre-market window where it has no real training signal. |
+| Phase 2 constant `C` | `2.0` | Expected pre-market arrivals in the `(midnight UTC of close day, 10am EDT]` window. Based on G1 audit of 3 h/m-observable movies with scraper running past close (forbidden_fruits=2, they_will_kill_you=2, you_me_and_tuscany=0; mean 1.33). C=1 wins MAE on this sample; C=2 is shipped as safer-against-under-prediction midpoint. |
+| `PRE_MARKET_HOURS` | 14 | Used by the F-audit script to define market close in UTC. 10am EDT = 14:00 UTC. ±1h depending on DST. |
+| Phase 2 formula | `phase2 = C` (constant) | No training-set aggregation, no F parameter, no per-movie scaling. Trivial to implement; trivial to re-tune as more h/m data arrives. |
 
 ### Snapshot-state helper (promoted from notebook)
 
@@ -75,6 +84,29 @@ Per `findings/stratified_training_investigation.md` §10.8 and `BACKLOG.md` §1.
 |---|---|---|
 | Skip rule: minimum first_review_dbc | `snap_dbc + 1` | A snapshot must be at least 1 day after the target's first review for the Jaccard computation to have usable signal. |
 | Skip rule: minimum observed critics | 3 | A target must have ≥3 observed critics at snap for Jaccard to discriminate. Below this, fall back to gap-only selector. |
+
+### Weighted KDE build (ADDED per Path B-lite §4, 2026-04-18)
+
+New function `build_kde_lambda_model_weighted(profiles, scores, ...)` that takes per-movie similarity scores.
+
+| Parameter | Proposed value | Description |
+|---|---|---|
+| Weighting source | `combined_score_with_scores()` output | Returns `{slug: score}` for the top-20 training. Those scores become per-data-point weights in `gaussian_kde(timing_data, weights=...)`. |
+| base_rate formula | `sum_of_weights_of_movies_this_critic_reviewed / sum_of_all_weights` | Replaces the unweighted `n_reviewed / n_training`. Critics in more-similar training movies get higher base_rates. |
+| Normalization | `raw_weights × (n_movies / sum(raw_weights))` | Scales weights so their sum matches unweighted convention (base_rate range comparable). Falls back to uniform if all scores are zero. |
+
+Validated: cohort-wide +7.7% MAE vs equal-weight KDE at same selector, bandwidth, and snap. See `findings/path_b_lite_investigation.md` §4.
+
+### Snap-time convention (REVISED per Path B-lite §7, 2026-04-18)
+
+| Parameter | Proposed value | Description |
+|---|---|---|
+| `snap_time` formula | `close_ts.floor('D') − SNAP_DAYS × pd.Timedelta(days=1)` | **Midnight UTC on close−N**, not `close_ts − Nd`. Cleaner day-boundary semantics. |
+| Day-level timestamp shift | `ts += 12h` for `timestamp_confidence == 'd'` reviews | Shifts day-level reviews from midnight UTC to noon UTC at profile-build time. Eliminates the "spike-on-boundary" artifact that naive midnight-aligned snap creates. H/m reviews unchanged. |
+| `snap_dbc_effective` | `SNAP_DAYS + midnight_utc_dbc` | E.g., for SNAP_DAYS=3 and 14:00-UTC close: snap_dbc_effective ≈ 3.583. |
+| Phase_1 window | `(midnight_utc_dbc, snap_dbc_effective]` | 3 full calendar days before close day. |
+
+Tradeoff: cohort MAE higher (13.45 vs ship 6.58) but mean_err near-calibrated (+1.56 vs +4.98) and h/m bias halved (−6.78 vs −14.75). Bias is correctable downstream; variance is not. See `findings/path_b_lite_investigation.md` §7.
 
 ---
 
@@ -84,7 +116,7 @@ Per `brainstorm/brainstorm_pre_ship_tuning.md` and `PROMPTS.md` Prompt 4. The pr
 
 - **`σ_gap`** — sweep ∈ {2, 4, 8, 16, ∞} at T-3d/T-5d/T-7d full window. σ_gap→0 is equivalent to `gap_overlap_ranked` (exact-match filter); σ_gap=8 is current recommendation. Decision rule: ≥3% T-3d MAE improvement with bootstrap CI95 lower > 0 → replace.
 - **`k` (n_training)** — sweep ∈ {5, 10, 15, 20, 25, 30, 50} using σ_gap winner. Decision rule: same.
-- **`F`** — re-estimate after fresh reviews.csv pull from Neon (gated). If new estimate differs from current by > 0.2, update.
+- **`F`** — RESOLVED 2026-04-18 via G1 audit (findings §17): F × count form replaced by constant C=2. See "Close-day piecewise patch" table above.
 - **Re-pick frequency** (backtest methodology) — measure MAE-vs-rebuild-frequency curve on h/m target movies. Informs but does not set the live-deployment trigger (which lives in the orchestrator per BACKLOG.md §1.6).
 
 Out of scope for this pass: **`α`** tuning (plateau too flat, keep at 0.5 per findings §10.7).

@@ -1,5 +1,7 @@
 # Findings: Gap-Stratified Training Investigation
 
+> **2026-04-19 CONVENTION WARNING:** this doc uses the older UTC-midnight snap convention, 14h phase-2 window, and `C=2`. These are **superseded** by the ship conventions in `CLAUDE.md` (midnight ET snap, 10h phase-2 window, `C=1`). Do not copy timestamp handling, snap definitions, or phase-2 logic from this doc into new code. See `findings/ridge_lambda_investigation.md` + `plans/plan_ridge_integration.md` for the current ship spec.
+
 **Date:** 2026-04-17 (started); 2026-04-18 (extended with KDE quality diagnostics, bandwidth fix, and Phase A critic-overlap similarity).
 **Status:** Active investigation. Stratified training validated. Close-day piecewise patch validated. KDE bandwidth cap identified as major upstream fix. **Phase A (critic-overlap as similarity dimension) validated at T-3d (+12.4% MAE, statistically significant)** but no improvement at T-1d. No library code committed yet — pending integration plan.
 **Scope:** Originally an investigation of gap-stratified training as a cheaper alternative to embargo-anchor rebuild. Expanded to cover (a) stratified training A/B, (b) close-day midnight bias and piecewise patch validation, (c) KDE quality diagnostics revealing structural over-prediction, (d) shape vs scalar decomposition, (e) bandwidth selection fix, (f) critic-overlap as similarity dimension.
@@ -22,6 +24,9 @@
 - **Recency (§12) — mixed signal.** Adding recency as a third feature monotonically hurts T-3d (−1 to −5%) but helps T-5d (peak +5.9% at w=0.2 with worse calibration). The time-varying-coefficient pattern is real but small; deferred to Path B.
 - **Feature-addition plateau reached.** Phase B null + recency mixed confirms we're at the local optimum given current feature set + n=143 cohort. Further improvements require either external movie metadata (genre, distributor, budget), or more h/m close-day data, or a different model class. See `plans/plan_learned_similarity_model.md` for the deferred Path B direction.
 - **Decision:** Four changes worth library-committing once integration plan is written: (1) bandwidth cap to ~0.7d for current cohort, (2) `combined_score` training-set selector (α=0.5), (3) close-day piecewise patch with F as a config parameter, (4) skip-rule helper for snapshots without enough observed critics. Bandwidth cap is the highest-leverage and probably should land first.
+- **Pre-ship tuning (§16, 2026-04-18): σ_gap=8 and n_training=20 re-validated.** Bootstrap-paired CI at T-3d/T-5d/T-7d — no alternative satisfies the ≥3% T-3d MAE + CI95_lo>0 decision rule. One SIG result (n=5 @ T-7d, +17% MAE with wide CI) is flagged as a future-work breadcrumb for time-varying `n(horizon)`.
+- **G1 F-audit (§17, 2026-04-18): piecewise form REVISED.** Fresh reviews.csv pull + scraper-coverage audit on 5 h/m movies showed the prior F × mean_close_day_count form was wrong (F=0.7 over-predicts phase 2 by ~8 reviews on clean subset, MAE 8.34). Ship form is now `phase 1 → midnight UTC of close day` + `phase 2 = C = 2 (constant)`. Also fixed a correctness bug: the existing implementation used `dbc_to=0.0` for phase 1, which integrated the KDE into the pre-market window where it has no real training signal. Ship form splits the window explicitly.
+- **Separate issue surfaced (§17.3, BACKLOG §1.8): high-volume movies are systematically under-predicted at T-3d.** Phase 1 mean_err = -14.78 on 5 h/m targets vs nearly zero at T-1d. Diagnosis: `combined_score` selector doesn't match on volume (gap + Jaccard don't directly encode expected activity level), and scaling clamp at 2.0 is too tight for outliers. Mitigation: loosen scaling upper clamp (cheap) or add volume feature to selector (Path B).
 
 ---
 
@@ -615,6 +620,9 @@ In rough order of expected impact per unit of work:
 - `notebooks/stratified_training_validation.ipynb` — 74-cell validation notebook covering all sections in this findings doc.
 - `notebooks/.cache/` — LOO results caches (gitignored): `stratified_training_loo.pkl`, `kde_quality_test.pkl`, `kde_window_split.pkl`, `kde_relaxed_scaling.pkl`, `kde_bandwidth_cap.pkl`, `critic_overlap_test.pkl`, `critic_overlap_test_full_window.pkl`, `alpha_sweep_full.pkl`, `progression_t5.pkl`, `phase_b_shape.pkl`, `phase_b_recency.pkl`.
 - `findings/stratified_training_investigation.md` — this file.
+- `notebooks/pre_ship_tuning.ipynb` — pre-ship tuning successor notebook (18 cells: anchor baseline, gap diagnostic, σ_gap and n sweeps, ship decision).
+- `notebooks/_helpers.py` — factored helpers from `stratified_training_validation.ipynb` (data loading, selectors, KDE-capped, predict_window, bootstrap). Importable by pre_ship_tuning and future notebooks.
+- `notebooks/.cache/pre_ship_tuning.pkl` — T1 + T2 sweep LOO results (gitignored).
 - `plans/plan_critic_overlap_similarity.md` — Phase A plan (gitignored).
 - `plans/plan_learned_similarity_model.md` — Path B plan, deferred (gitignored).
 - `brainstorm/brainstorm_pre_ship_tuning.md` — pre-ship tuning brainstorm (gitignored).
@@ -626,4 +634,275 @@ In rough order of expected impact per unit of work:
 - `BACKLOG.md` — added §1.4 (bandwidth selection should adapt to timestamp granularity), §1.5 (recommended parameter values pending library integration), §1.6 (triggered re-curation for live deployment), §1.7 (long-term direction: richer training-set curation, retire the piecewise patch).
 - `rotten_tomatoes_forecasting/critic_model.py` — `build_kde_lambda_model` docstring updated to flag bandwidth-floor / granularity coupling. No behavior changes.
 
-**Library code: no behavior changes.** All experimental code lives in the notebook with inline `_fit_critic_kde_capped`, `build_kde_lambda_model_capped`, `predict_window`, `predict_window_custom`, `compute_scaling_custom`, `combined_score_selector`, `gap_overlap_ranked_selector`, etc. Pending: pre-ship tuning pass (per §13 recommendation 1 and `brainstorm/brainstorm_pre_ship_tuning.md`) → integration plan for the four validated interventions (bandwidth ceiling parameter, similarity-based selector, piecewise helper, snapshot-state helper).
+**Library code: no behavior changes.** All experimental code lives in the notebook with inline `_fit_critic_kde_capped`, `build_kde_lambda_model_capped`, `predict_window`, `predict_window_custom`, `compute_scaling_custom`, `combined_score_selector`, `gap_overlap_ranked_selector`, etc., with the pure-function subset factored into `notebooks/_helpers.py` during the pre-ship tuning pass. Pending: integration plan for the four validated interventions (bandwidth ceiling parameter, similarity-based selector, piecewise helper, snapshot-state helper). Pre-ship tuning pass complete (see §16) — values re-validated, no parameter changes required.
+
+---
+
+## 16. Pre-ship tuning pass (2026-04-18)
+
+Following §13 recommendation 1 and `brainstorm/brainstorm_pre_ship_tuning.md`, ran a re-validation pass to tighten or replace §1.5 parameter values before library integration. Notebook: `notebooks/pre_ship_tuning.ipynb`. Helpers factored out of `stratified_training_validation.ipynb` into `notebooks/_helpers.py` so the new notebook imports cleanly.
+
+### 16.1 Anchor baseline
+
+Deployment stack (`combined_score(α=0.5, σ_gap=8) + ceil=0.7 + piecewise(F=0.7)`) on full snap-to-midnight-UTC window with symmetric F-expansion on actual:
+
+```
+snap   n    MAE    median_err   median_abs_err
+T-3d  136   9.99     +2.55          7.02
+T-5d   93  31.86     +6.67         27.86
+T-7d   61  61.14    +32.10         54.14
+```
+
+F shifted from the findings-time F=1.0 to ship-time F=0.7 per brainstorm G1 (conservative midpoint of the defensible [0.5, 1.0] range; pull-timing caveat on the 21-sample F=1.0 estimate).
+
+### 16.2 Gap-distribution diagnostic
+
+For each of 143 targets, count candidates (past-resolved movies excluding target) at `|gap_diff|` thresholds. Stratified by target gap quantile.
+
+```
+bucket  n_targets    ≤0.5d     ≤1d      ≤2d      ≤5d      (count; % of bucket with ≥20 candidates)
+Q1         46      13 (37%)  22 (56%)  27 (70%)  31 (74%)
+Q2         28       8 (7%)   28 (64%)  42 (79%)  48 (86%)
+Q3         33       2 (0%)    6 (3%)    9 (18%)  22 (54%)
+Q4         36       0 (0%)    0 (0%)    0 (0%)    1 (0%)
+```
+
+Cohort-wide fraction with ≥20 candidates:
+- within 0.5d: **13.3%**
+- within 1d: **31.5%**
+- within 2d: **42.0%**
+- within 5d: **53.1%**
+
+**Implication:** tight-σ_gap (e.g. 2-4) is infeasible as a single cohort-wide setting. Q3 barely clears 20 candidates at 5d; Q4 never does. Any σ_gap<8 regresses to band-expansion for Q3-Q4 targets — which is identical to larger σ_gap behavior. This preempts T1's likely failure mode.
+
+### 16.3 T1: σ_gap sweep
+
+Sweep σ_gap ∈ {2, 4, 8, 16, ∞} at T-3d/T-5d/T-7d. Hold `n=20`, `α=0.5`, `ceil=0.7`, `F=0.7`. Bootstrap 1000 resamples, paired per target. Decision rule: ≥3% T-3d MAE improvement AND CI95_lo > 0 → replace σ_gap=8.
+
+```
+T-3d snap (n=136):
+  sigma_gap    MAE    pct_vs_ctrl   CI95_lo   CI95_hi   sig
+  2           10.02      -0.3%       -0.20     +0.14    ns
+  4           10.13      -1.4%       -0.26     -0.02    ns
+  8 (ctrl)     9.99       0.0%           —         —    ctrl
+  16          10.02      -0.3%       -0.21     +0.13    ns
+  inf         10.04      -0.5%       -0.42     +0.31    ns
+
+T-5d snap (n=93):
+  sigma_gap    MAE    pct_vs_ctrl   CI95_lo   CI95_hi   sig
+  2           31.53      +1.0%       -0.59     +1.25    ns
+  4           32.12      -0.8%       -0.90     +0.39    ns
+  8 (ctrl)    31.86       0.0%           —         —    ctrl
+  16          32.31      -1.4%       -1.10     +0.23    ns
+  inf         33.39      -4.8%       -3.87     +1.03    ns
+
+T-7d snap (n=61):
+  sigma_gap    MAE    pct_vs_ctrl   CI95_lo   CI95_hi   sig
+  2           60.99      +0.3%       -4.76     +5.36    ns
+  4           61.81      -1.1%       -4.42     +3.32    ns
+  8 (ctrl)    61.15       0.0%           —         —    ctrl
+  16          60.05      +1.8%       -1.06     +3.32    ns
+  inf         62.48      -2.2%       -9.17     +5.52    ns
+```
+
+**T1 verdict: σ_gap=8 stays.** No alternative satisfies the decision rule. The plateau at T-3d spans [9.99, 10.13] — 1.4% spread at measurement noise (136 targets, MAE ~10). σ_gap=8 happens to be the minimum; any value in {2, 16} is within noise. σ_gap=∞ (pure Jaccard) is meaningfully worse at T-5d (-4.8%) and T-7d (-2.2%), ruling out "gap is dead weight." Tight σ_gap (2-4) also loses slightly, confirming the diagnostic's prediction.
+
+### 16.4 T2: n_training sweep
+
+Using T1's σ_gap=8 winner. Sweep n ∈ {5, 10, 15, 20, 25, 30, 50}. Same decision rule.
+
+```
+T-3d snap (n=136):
+  n_training   MAE    pct_vs_ctrl   CI95_lo   CI95_hi   sig
+  5           10.46      -4.7%       -1.21     +0.19    ns
+  10          10.27      -2.8%       -0.71     +0.16    ns
+  15           9.97      +0.2%       -0.25     +0.29    ns
+  20 (ctrl)    9.99       0.0%           —         —    ctrl
+  25          10.08      -0.9%       -0.29     +0.09    ns
+  30          10.02      -0.3%       -0.30     +0.23    ns
+  50          10.33      -3.4%       -0.82     +0.08    ns
+
+T-5d snap (n=93):
+  n_training   MAE    pct_vs_ctrl   CI95_lo   CI95_hi   sig
+  5           30.81      +3.3%       -2.47     +4.65    ns
+  10          31.71      +0.4%       -2.05     +2.39    ns
+  15          31.49      +1.2%       -1.09     +1.81    ns
+  20 (ctrl)   31.86       0.0%           —         —    ctrl
+  25          32.46      -1.9%       -1.55     +0.40    ns
+  30          32.16      -0.9%       -1.79     +1.25    ns
+  50          33.62      -5.6%       -4.83     +1.38    ns
+
+T-7d snap (n=61):
+  n_training   MAE    pct_vs_ctrl   CI95_lo   CI95_hi   sig
+  5           50.70     +17.1%      +0.80    +22.03    SIG
+  10          59.49      +2.7%      -4.55     +8.07    ns
+  15          59.14      +3.3%      -0.75     +4.85    ns
+  20 (ctrl)   61.15       0.0%          —         —    ctrl
+  25          58.81      +3.8%      -4.29     +9.37    ns
+  30          61.28      -0.2%      -7.94     +8.03    ns
+  50          62.05      -1.5%     -12.22    +10.41    ns
+```
+
+**T2 verdict: n=20 stays.** No n satisfies the T-3d decision rule. Plateau at T-3d spans n=15-30 within ±1% of n=20. n=5 loses materially at T-3d (-4.7%) and n=50 at both T-3d (-3.4%) and T-5d (-5.6%).
+
+**T-7d n=5 curiosity (noted, not shipped):** n=5 shows a statistically significant +17.1% MAE improvement at T-7d (CI95 [+0.80, +22.03], point +10.4 MAE units). Possible mechanism: at T-7d, 68/143 targets are skipped for having no observations yet — the surviving 61 skew toward pre-embargo festival-circuit / early-release movies, where a tight n=5 training set captures rare-regime signal that n=20 averages away. The CI95 is extremely wide (+0.80 to +22.03) — a handful of long-horizon targets are likely dominating. This is not enough to change the ship (fails T-3d rule), but is a breadcrumb for a future "n_training adapts to horizon" investigation — likely Path B territory (see `plans/plan_learned_similarity_model.md`, time-varying coefficients).
+
+### 16.5 Ship decision
+
+**Stack ships unchanged.**
+
+```
+  alpha:      0.5   (unchanged — α sweep at noise floor per §10.7)
+  sigma_gap:  8     (re-validated — no replacement passes decision rule)
+  n_training: 20    (re-validated — no replacement passes decision rule)
+  floor:      0.5d  (unchanged)
+  ceil:       0.7d  (unchanged)
+  F:          0.7   (unchanged — G1 re-estimation pending fresh data)
+```
+
+No updates to `BACKLOG.md` §1.5 required except changing F's recommendation from 1.0 to 0.7 per the brainstorm's ship-conservative choice. (§1.5 currently reads F=1.0 citing the estimation; the ship F should be 0.7 until G1 lands.)
+
+### 16.6 Re-validation value
+
+The re-validation is informative even without a parameter change:
+
+1. **σ_gap=8 is robust across horizons.** T-3d, T-5d, T-7d all show σ_gap=8 at or near the MAE minimum. No horizon-dependent σ_gap pattern emerged, which removes one motivation for Path B's time-varying-coefficient framework as applied to σ_gap.
+2. **The gap-distribution diagnostic quantifies the cohort's structural limit.** Q4 (36 movies, >16.6d gaps) has zero targets with ≥20 candidates within 5d. Any "tight neighborhood" selector reduces to the general pool for Q4. This bounds the upside of any future gap-based refinement on the current cohort.
+3. **n=5 @ T-7d is the only SIG result in the entire pass.** Worth keeping in mind as a signal for future investigation (learned `n(horizon)`), but the wide CI95 and fails-T-3d-rule outcome mean no immediate action.
+
+The integration-ready stack is confirmed: `combined_score(α=0.5, σ_gap=8) + bandwidth_cap(ceil=0.7d) + piecewise(phase 1 to midnight UTC + phase 2 constant C=2)`. Piecewise form revised post-§16 per the G1 F-audit (§17).
+
+---
+
+## 17. G1 F-audit — phase 2 form revision (2026-04-18)
+
+**Context:** Jake pulled a fresh `reviews.csv` from Neon (~23k rows) and added `you_me_and_tuscany` to `movies_index.csv` (close 2026-04-13T14:00Z). The G1 audit scoped in the brainstorm was then runnable: re-estimate F on the expanded h/m close-day cohort with proper post-market coverage.
+
+**Notebook:** `notebooks/f_audit.ipynb`. Targets the 5 h/m movies (`the_drama`, `the_super_mario_galaxy_movie`, `forbidden_fruits_2026`, `they_will_kill_you`, `you_me_and_tuscany`). Uses the ship stack (combined_score α=0.5 σ_gap=8, ceil=0.7d, n=20) but **re-frames phase 1 and phase 2 to match the design spec** (not the implementation used in §16).
+
+### 17.1 Framework correction
+
+Earlier validation (§16 and stratified_training_validation.ipynb cell 58) ran `predict_window(dbc_to=0.0)`, which integrates the KDE all the way to market close (10am EDT) — despite the notebook comment claiming "full snap-to-midnight-UTC window." Piecewise then added `F × mean_close_day_count` ON TOP, double-counting the 12am-10am window.
+
+Validation was symmetric (actual also got `F × close_day_count(target)` added), so MAE was relatively F-insensitive cohort-wide. But the MAE numbers didn't represent any clean quantity. For 98% of the cohort (day-level targets) they were proxy-vs-proxy; for the 2% h/m cohort, actual was inflated by post-market activity that the predicted side was trying to also account for via bloat.
+
+**Corrected framework:**
+
+- **Phase 1**: KDE integrates `(midnight_utc_dbc, snap_dbc]` — stops at midnight UTC of close day. Observable via day-level + h/m data.
+- **Phase 2**: covers `(0, midnight_utc_dbc]` — the 14-hour pre-market window. Observable ONLY on h/m movies.
+- **Predicted total** = phase1 + phase2.
+- **Actual total** = `actual_remaining(snap)` for h/m targets, which naturally excludes post-market close-day reviews (their dbc < 0). No proxy needed.
+
+### 17.2 Scraper coverage audit
+
+Pre-check: does the fresh CSV capture post-market close-day reviews for each target?
+
+```
+Target                          Latest review vs close_ts   Scraper status
+the_drama                       −1.1h                       OFF (disabled before close)
+the_super_mario_galaxy_movie    −6.8h                       OFF
+forbidden_fruits_2026           +102h                       OK
+they_will_kill_you              +148h                       OK
+you_me_and_tuscany              +1.8h                       OK
+```
+
+`the_drama` and `super_mario_galaxy` had their scraper configs disabled before close day ended. Their h/m pre-market counts are valid but their post-market counts are missing (which is fine — we only need pre-market for phase 2). However, the actual phase 2 count could be under-counted if a review arrived between scraper-shutoff and market close — mild bias.
+
+`forbidden_fruits`, `they_will_kill_you`, `you_me_and_tuscany` form the **clean subset** (n=3): scraper stayed on past close, actual phase 2 count is complete.
+
+### 17.3 Phase 1 quality (KDE on observable window)
+
+```
+Snap      n     MAE     mean_err
+T-1d      5    0.89     −0.12       ← essentially unbiased
+T-3d      5   14.78    −14.78       ← systematic under-prediction
+```
+
+**T-1d**: phase 1 predicts the (midnight_UTC, T-1d) window ≈ 0.42 days of pre-close activity. KDE calibration is excellent at this horizon: mean_err = -0.12 across 5 targets.
+
+**T-3d**: phase 1 systematically under-predicts by ~15 reviews per target. Details:
+
+| target | actual_phase1 | phase1_pred | phase1_err |
+|---|---|---|---|
+| the_drama | 52 | 18.28 | −33.72 |
+| the_super_mario_galaxy_movie | 26 | 20.73 | −5.27 |
+| forbidden_fruits_2026 | 17 | 13.78 | −3.22 |
+| they_will_kill_you | 34 | 12.40 | −21.60 |
+| you_me_and_tuscany | 26 | 15.93 | −10.07 |
+
+These 5 h/m movies are **high-volume outliers** — they got live-tracked because they were expected to draw many reviews, and they did. At T-3d, the KDE systematically under-predicts this subset. Cohort-wide this averages out against over-predicted low-volume targets (findings §9.5). See `BACKLOG.md` §1.8 for diagnosis and mitigation plan.
+
+### 17.4 Phase 2 form sweep (T-1d, clean subset n=3)
+
+Ground truth actual_phase2: `forbidden_fruits=2, they_will_kill_you=2, you_me_and_tuscany=0`. Mean = 1.33.
+
+```
+phase2_form       MAE    mean_err
+C=0              1.12    −1.01
+C=1              0.79    −0.01     ← best MAE
+C=2              1.03    +0.99
+C=3              1.99    +1.99
+F=0.2×mean_cd    1.66    +1.66
+F=0.7×mean_cd    8.34    +8.34     ← catastrophic over-prediction
+```
+
+**Key findings:**
+
+1. **Constant dominates proportional across all reasonable values.** F=0.7 × mean_cd (current ship) over-predicts phase 2 by ~8 reviews on average. F=0.2 × mean_cd is OK but still worse than simple constants in {1, 2}.
+2. **Optimal C is in {1, 2}**, not sharply distinguishable at n=3. C=1 minimizes MAE and has zero mean bias; C=2 trades MAE slightly for a +0.99 safety margin against under-prediction.
+3. **No positive correlation between close_day_count and pre-market count** across the 3 clean movies: `they_will_kill_you` has `close_day_count=13` but only 2 pre-market; `forbidden_fruits` has `close_day_count=3` and also 2 pre-market. The proportional form is structurally wrong for this dataset.
+
+### 17.5 Ship decision for phase 2 form
+
+**Ship `phase 2 = C = 2` (constant, no training-set aggregation).**
+
+Rationale:
+- C=1 and C=2 are within MAE noise at n=3. C=1 has slightly better MAE on our sample; C=2 errs on the safe side (under-predicting reviews is riskier than over-predicting for a "reviews cross threshold" market).
+- Eliminates F parameter, training-set aggregation for close_day_count, and the proxy-vs-proxy validation framework that muddied §16.
+- Round number, easy to reason about, easy to swap if more data says otherwise.
+
+**What the library helper looks like now:**
+
+```python
+def compute_close_day_phase2(C: float = 2.0) -> float:
+    """Phase 2 of piecewise close-day correction.
+
+    Represents expected pre-market-close critic arrivals in the
+    (midnight UTC of close day, market close] window. Empirically ~1-2
+    across h/m-observed movies regardless of movie size.
+    """
+    return C
+```
+
+Much simpler than the prior `F × mean(close_day_count(s) for s in training_slugs)` design.
+
+### 17.6 Revised phase 1 call site
+
+Library integration should set `dbc_to = midnight_utc_dbc_for_target`, NOT `dbc_to = 0.0`:
+
+```python
+midnight_utc_dbc = (close_ts - close_ts.floor('D')).total_seconds() / 86400
+phase1 = predict_window(model, dbc_from=snap_dbc, dbc_to=midnight_utc_dbc, ...)
+phase2 = 2.0
+predicted_total = phase1 + phase2
+```
+
+This is a correctness fix, not just a cleanup — the previous `dbc_to=0.0` made phase 1 integrate into a region (pre-market close day) where the KDE has essentially no training signal, producing bandwidth-bleed artifact mass that got added to the phase 2 constant on top.
+
+### 17.7 Caveats
+
+- **n=3 clean movies** is a tiny sample for committing to a phase 2 form. The C=2 choice is a "best defensible on current data," not a tightly-bounded estimate.
+- **Cross-movie variance in pre-market counts is high** relative to sample size (0, 2, 2 → mean 1.33, range 2). We can't rule out a genuine movie-level factor we haven't identified. If per-movie variance stays this wide as more h/m movies accumulate, a future refinement might be to condition C on something observable (genre, distributor, release pattern) — Path B territory.
+- **T-3d phase 1 under-prediction is a separate concern.** See BACKLOG §1.8. Not addressable via phase 2 changes; needs volume-signal curation feature or looser scaling clamp.
+
+### 17.8 Updates triggered
+
+- `BACKLOG.md` §1.5 — piecewise section rewritten for the constant-C form + corrected phase decomposition.
+- `BACKLOG.md` §1.8 — NEW entry for high-volume under-prediction at longer horizons.
+- `notebooks/f_audit.ipynb` — added to repo (gitignored caches live under `notebooks/.cache/`, but this notebook doesn't need one at n=5 targets).
+- `movies_index.csv` — added `you_me_and_tuscany` close date entry.
+- Memory file — updated with phase 2 ship form.
+
+Integration conversation now has a cleaner spec to work from:
+- Phase 1 helper: takes `dbc_to = midnight_utc_dbc` computed per-target.
+- Phase 2 helper: returns a scalar constant (2.0 as default), no training-set arg needed.

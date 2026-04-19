@@ -14,6 +14,7 @@ dependencies = [
     "notebook>=7.0",
     "nbstripout>=0.8",
     "python-dotenv>=1.0",
+    "scikit-learn>=1.8.0",
 ]
 
 [build-system]

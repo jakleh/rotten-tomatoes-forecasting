@@ -40,7 +40,7 @@ Read CLAUDE.md and BACKLOG.md 1.2. Break down the existing p_fresh calibration (
 Work in notebooks/p_fresh_calibration.ipynb.
 ```
 
-### Prompt 4: Pre-ship tuning for validated deployment stack
+### Prompt 4: Pre-ship tuning for validated deployment stack (COMPLETED 2026-04-18)
 
 ```
 Read, in order: CLAUDE.md, BACKLOG.md (especially §1.5-§1.7), findings/stratified_training_investigation.md (especially TL;DR + §10-15), and brainstorm/brainstorm_pre_ship_tuning.md. The brainstorm has been reviewed by an independent agent and incorporates those fixes.
@@ -74,4 +74,175 @@ Follow PROTOCOL.md: the successor notebook is an analysis notebook tier, so a br
 Do NOT add new features during this pass. The user's stance: no more feature hunting, we're at the local optimum given current feature set + cohort size. If something looks like Path B territory, defer it.
 
 Session-level goal: complete T1+T2, ship-decide, and hand off to the integration conversation.
+```
+
+### Prompt 5: Library integration for validated stack (SUPERSEDED by Prompt 8)
+
+> **2026-04-19:** the Ridge investigation (`findings/ridge_lambda_investigation.md`) changed the ship candidate. Use **Prompt 8** below for library integration. This Prompt 5 is kept as historical context for the original KDE-vs-Ridge dual-model question that led to the Ridge investigation.
+
+```
+Read, in order: CLAUDE.md, BACKLOG.md §1.5 and §1.8, findings/stratified_training_investigation.md §16-17, and findings/path_b_lite_investigation.md (especially TL;DR, §9, §15-17).
+
+Context: extensive investigation converged on two viable ship candidates, each with known tradeoffs (per path_b_lite_investigation.md §15):
+
+  Weighted-KDE stack (per-target stability, known h/m bias):
+    combined_score(α=0.5, σ_gap=8) top-20 selector
+    + weighted KDE build (per-data-point weights = combined_score values) [new]
+    + bandwidth (floor=0.5d, ceiling=0.7d)
+    + midnight+noon snap convention: snap_time = midnight UTC on close-N, day-level reviews shifted to 12:00 UTC [new]
+    + phase_1 = KDE integral over (midnight_utc_dbc, snap_dbc_effective]
+    + phase_2 = constant C=2
+    → cohort MAE 13.26, h/m MAE 18.23, h/m me −6.78
+
+  Ridge(α=10) regression (cohort-calibrated, per-target variance):
+    Features: observed_count, first_review_dbc, target_gap, observed_rate,
+              rate_last_day, rate_first_day, top_critic_frac, pub_diversity,
+              pub_entropy, low_activity_frac
+    → cohort MAE 8.85, h/m MAE 26.91, h/m me +0.69
+
+Neither dominates. Ridge wins cohort + calibration; KDE wins h/m MAE with systematic under-bias. Choice depends on deployment priorities.
+
+Known architectural ceiling: 14+ interventions tested in Path B-lite investigation couldn't break through the h/m under-prediction limit. Root cause is that features observable at T-3d don't predict late-surge behavior on long-gap targets. See findings/path_b_lite_investigation.md §13 for full ruled-out list.
+
+Task: write a library integration plan in plans/plan_library_integration.md covering:
+
+1. API surface. Which new symbols to export from __init__.py, which live as internal helpers:
+   - `build_kde_lambda_model(bandwidth_ceiling=0.7)` — add parameter with new default.
+   - `build_kde_lambda_model_weighted(profiles, scores)` — NEW public function.
+   - `combined_score_selector` + `combined_score_with_scores` — NEW public functions.
+   - `compute_close_day_phase2(C=2.0)` — trivial, returns C.
+   - `snapshot_state` helper — promote from notebook.
+   - Consider: `fit_phase1_regressor(features, targets) -> regressor` + `predict_phase1_regression(regressor, features)` for the Ridge alternative. Ships alongside KDE.
+   - Convention switch: rename defaults or document? Backward compat with existing consumers matters.
+
+2. Dual-model policy: ship BOTH KDE and Ridge? Or just KDE with Ridge as experimental?
+   Pros of both: deployment flexibility, orchestrator picks per strategy.
+   Cons: doubles API surface, test matrix.
+
+3. Default-value policy for new parameters: opt-in or on-by-default?
+   Migration notes for the orchestrator consumer at ~/Desktop/kalshi-trading/.
+
+4. Test additions for each new function + integration tests.
+
+5. CHANGELOG entry and version bump (0.1.0 → 0.2.0? Breaking-ish given snap semantics change).
+
+After the plan is signed off, the implementation pass is a separate conversation.
+
+BLOCKERS / open questions for Jake before writing the plan:
+- Ship single model (KDE only) or dual (KDE + Ridge)?
+- Is midnight+noon snap convention a hard migration or does library support both?
+- Does orchestrator currently expect the old snap convention? Check kalshi-trading/src/ before writing the plan.
+
+OUT OF SCOPE (deferred):
+- Finite-pool model (brainstorm exists; architectural rework).
+- Hier-Bayes with different shape family (Gamma was null).
+- TMDb metadata path (declined by Jake).
+- More h/m cohort data (wait).
+```
+
+### Prompt 6: Wait-and-revisit pass (future, after h/m cohort grows)
+
+```
+Read findings/path_b_lite_investigation.md §13-14. Several interventions that were ruled out may become viable as the cohort's h/m fraction grows over time.
+
+Trigger: when ≥30% of resolved cohort movies have h/m timestamps (currently ~5%).
+
+Re-test with fresh cohort:
+1. Weighted KDE + midnight+noon on h/m-representative cohort. Does the architectural ceiling still hold?
+2. Hierarchical Bayes with non-parametric partial-pooling (per-movie empirical CDFs rather than Gamma parametric).
+3. Shape-similarity selector with expanded cohort coverage (more shape-similar neighbors available).
+4. Finite-pool model — if cohort shifts toward h/m, per-target P(review | movie) becomes tractable from more-granular data.
+
+Evaluation: hold out last N h/m-resolved movies (not the original 5 — those are now permanent cohort members). Decision rule: h/m MAE materially below current ship candidates.
+```
+
+Optional follow-up (NOT in this plan, but worth logging as a BACKLOG item): time-series regression as alternative or blend. See findings §9 — Ridge beats KDE on cohort MAE (9.71 vs 13.45) and is near-calibrated on h/m (me ≈ 0), but higher h/m variance. Worth exploring as a blended predictor, but not prerequisite for initial integration.
+```
+
+### Prompt 7: Continue phase-1 KDE menu mix-and-match
+
+```
+Read, in order: CLAUDE.md, brainstorm/brainstorm_phase1_kde_menu.md (the menu reference — primary doc for this work), findings/path_b_lite_investigation.md (full investigation context), findings/stratified_training_investigation.md §16-17 (pre-ship tuning + G1 piecewise audit).
+
+Context: Jake is running a mix-and-match iteration on the phase-1 KDE pipeline. Despite 14+ ruled-out interventions documented in path_b_lite_investigation.md (concluded 2026-04-18), he wants to keep exploring combinations of the tested pipeline components — particularly those not yet tested in combination. The component menu lives at brainstorm/brainstorm_phase1_kde_menu.md, organized by pipeline stage A-K plus alternative architectures.
+
+Current ship candidate stack (per menu): A3 + B1 + C2 + D2 + D3 + E2 + F1 + G2 + H2 + I2 + J2 + K1.
+  - cohort MAE 13.26, h/m MAE 18.23, h/m mean_err −6.78
+  - Midnight+noon convention adopted per Jake 2026-04-18
+  - Known architectural ceiling on h/m under-prediction (oracle test confirmed)
+
+Primary untested options (per menu):
+  - **E5 (transformed base_rate):** square-root / log / cap / rank compression to reduce workhorse-critic dominance without per-target tiering (which Option C / E3 mis-classified late-surge targets)
+  - **C5 (hier-Bayes with log-normal or mixture-Gamma)**
+  - **C6 (non-parametric empirical-CDF partial pooling)**
+  - **D5 (custom bandwidth ceiling by target type)**
+  - **E6 / K3 (per-critic base_rate conditioned on target features)** — requires metadata
+
+Reference notebooks (in notebooks/):
+  - _helpers.py — factored helpers (combined_score, weighted KDE build, etc.)
+  - path_b_lite_weighted_kde.ipynb — C2 weighted KDE win
+  - option_c_base_rate_adjustment.ipynb — E3 Option C (Q1 win, h/m regression)
+  - scaling_clamp_sweep.ipynb + scaling_diagnostic.ipynb — F2/F4 ruled out
+  - shape_scale_model.ipynb — C3 ruled out
+  - hier_bayes_shape.ipynb — C4 ruled out
+  - time_series_regression.ipynb — R1 Ridge alternative
+  - critic_magnet.ipynb — K2 falsified
+
+Workflow for each test:
+  1. Jake proposes a combination: "A3 + B1 + C2 + D3 + E5a + F1 + G2 + H2 + I2 + J2 + K1"
+  2. Build a notebook that runs the combo under midnight+noon convention (G2 + H2).
+  3. Evaluate on cohort CV (no h/m) + h/m subset (5 movies: the_drama, super_mario_galaxy, forbidden_fruits, they_will_kill_you, you_me_and_tuscany).
+  4. Compare to ship stack baseline.
+  5. Decision rule: h/m MAE improvement AND cohort MAE non-regression (>−5%).
+
+Per PROTOCOL.md, notebook tier: brief intent section at top, no formal plan doc required for each combo. If a combo produces a meaningful result (positive or negative), add it to brainstorm_phase1_kde_menu.md under the relevant category, updating "ruled out" or "adopted" status as appropriate.
+
+Jake's stated preference: "in the face of all logic and reason, I still think the KDE approach can be fixed fully." Engage seriously — the architectural ceiling finding is real but not proven absolute across all untested combinations. A promising untested combo could still move things. The oracle test (findings §8.2) established the limit is in the architecture, not selection — but components like E5 (base_rate transform) haven't been tested in isolation.
+
+Do NOT push for library integration without Jake's explicit go-ahead. Prior session included a course-correction where Jake pushed back on "eager to integrate" — the current model is good enough to document but not necessarily to ship.
+
+Start by asking Jake what combo he wants to test first, or propose one based on the menu if he asks.
+```
+
+### Prompt 8: Ridge lambda integration (replaces Prompt 5)
+
+```
+BEFORE writing any timestamp / snap / phase logic, re-read the "Current Conventions"
+section at the top of CLAUDE.md. It defines the ET-midnight snap convention, 10h
+phase-2 window, C=1 constant, opt-in noon-shift, JSON artifact format, and snap_days
+routing. These supersede ALL older conventions in findings/, notebooks/, brainstorm/,
+and the current live library code (which is being replaced).
+
+If you grep historical docs for "snap_time" or "phase_2" or "apply_noon_shift", you'll
+land on notebooks that use the older UTC-midnight convention, C=2 phase-2, or silent
+noon-shift — those are intentionally-preserved historical validation artifacts with
+"CONVENTION WARNING" banners at the top. The banners say "do not copy into new code."
+Heed them. Current conventions in CLAUDE.md win.
+
+Read, in order: CLAUDE.md (conventions first, then overview), plans/plan_ridge_integration.md, findings/ridge_lambda_investigation.md (TL;DR + §2 + §4 for the spec), brainstorm/brainstorm_ridge_optimization.md (for the investigation context).
+
+Context: the 2026-04-19 Ridge investigation established ridge_t2 as the ship lambda estimator, superseding the KDE-based architecture. Plan doc is signed-off and covers: module layout, API surface, fit artifact strategy, test additions, version bump, orchestrator migration, phased implementation.
+
+Task: execute the plan's Phases A → E (library-side implementation). That's:
+
+  Phase A (scaffolding):   create lambda_model.py, features.py, pool.py, p_fresh.py module stubs; define LambdaRegressor + LambdaPrediction dataclasses; migrate estimate_p_fresh unchanged.
+  Phase B (features):      implement pool.py (A1 pool, base_rates, top-tier) + extract_lambda_features (17 features).
+  Phase C (fit/predict):   implement fit_lambda_regressor + estimate_lambda returning LambdaPrediction.
+  Phase D (artifact):      fit on current cohort, pickle to _artifacts/default_regressor.pkl, implement load_default_regressor.
+  Phase E (cleanup):       delete critic_model.py contents, update __init__.py exports, update CLAUDE.md / BACKLOG.md §1.5a / PARAMETERS.md, version bump + changelog.
+
+Per PROTOCOL.md: the plan doc exists; implementation can proceed without another planning pass. Test coverage target: 80%+ on new modules.
+
+Decision points flagged in plan §13:
+  - Default artifact naming: recommend `default_regressor.pkl` (simple).
+  - p_fresh consolidation with pool.py: recommend YES (avoid duplicate base_rate paths).
+  - snap_dbc routing: recommend explicit snap_days arg (no interpolation).
+  - Out-of-range snaps: raise (don't interpolate or fallback).
+  - Version sequencing: full replace at 0.2.0 (not a 0.2→0.3 deprecation).
+
+If Jake has different preferences on any of these decision points, confirm before implementing.
+
+Out of scope (per plan §12): tier 3 stacking, TMDb metadata, orchestrator-side changes (covered by findings/trading_strategy_from_ridge_errors.md separately). Phase F is an orchestrator-repo effort.
+
+Deliverable: a PR-ready working library at version 0.2.0 with all Phase A-E work complete, tests passing, docs updated.
 ```
