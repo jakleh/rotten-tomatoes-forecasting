@@ -246,3 +246,36 @@ Out of scope (per plan §12): tier 3 stacking, TMDb metadata, orchestrator-side 
 
 Deliverable: a PR-ready working library at version 0.2.0 with all Phase A-E work complete, tests passing, docs updated.
 ```
+
+### Prompt 9: Multi-anchor instantaneous-rate Ridge features (notebook only, data-gated)
+
+```
+Read, in order: CLAUDE.md (especially "Current Conventions"), BACKLOG.md §2.4, findings/ridge_lambda_investigation.md (§4.1 for current 17-feature set, §4.3 for LOO baseline).
+
+PREREQUISITE CHECK FIRST. Before any modeling, count cohort movies with m/h-confidence pre-close timestamps spanning enough of the first-review-to-close window to compute smoothed instantaneous rates at multiple anchor points. Memory notes only `the_drama` and `super_mario_galaxy` had useful pre-close minute-level data at the 0.2.0 ship (2026-04-19). If the current count is ≤5, STOP and tell Jake this is still data-gated — do not force the experiment on insufficient data.
+
+Context: 2026-04-20 brainstorm with Jake. The committed proposal (BACKLOG §2.4) is rate-at-anchor features for Ridge, NOT a standalone MVT-style predictor — that framing was explicitly ruled out in the brainstorm because MVT doesn't guarantee a shared t* across movies.
+
+Task (notebook tier only — NO library changes):
+
+1. Work in notebooks/anchor_rate_features.ipynb. Brief intent section at top per PROTOCOL.md analysis-notebook tier.
+
+2. Report the h/m-qualified cohort subset size. Apply the stop rule above.
+
+3. Define fractional-time anchors (e.g., f ∈ {0.2, 0.4, 0.6, 0.8} of the first-review-to-close gap). For each anchor f, compute a smoothed instantaneous review rate using a small time window. The window width is a knob — experiment and document the choice. This is the regressor version of the KDE bandwidth problem; be explicit about it.
+
+4. Add anchor-rate features to the existing 17-feature Ridge stack. Rerun cohort LOO using fit_lambda_regressor-compatible infrastructure. Compare MAE snap-by-snap against the shipped 0.2.0 baseline (numbers in findings/ridge_lambda_investigation.md §4 and BACKLOG.md §1.1).
+
+5. Decision rule: materially better cohort LOO MAE at early snaps (especially T-5d / T-4d) AND no regression at late snaps. Not shipping regardless of outcome — this pass is notebook-only exploration.
+
+6. Write findings summary in the notebook (or findings/anchor_rate_features.md if results are meaningful). Update BACKLOG.md §2.4 with the outcome.
+
+Known risks to document in the notebook:
+- Smoothing window choice reintroduces a bandwidth parameter in miniature.
+- Local burst/lull near an anchor biases the rate estimate. Mitigate by averaging over several nearby anchors or short windows.
+- h/m cohort may not be representative of the full 144-movie cohort; caveat any generalization claim.
+
+OUT OF SCOPE: library integration (separate backlog item if this wins), standalone MVT-style predictor (ruled out in brainstorm), shipping to any 0.2.x.
+
+Deliverable to Jake: sample-size check result, MAE comparison table if the experiment ran, short findings blurb.
+```

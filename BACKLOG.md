@@ -67,6 +67,25 @@ Allow p_fresh to change as a function of time-to-close (early reviews are more n
 
 Cross-movie shrinkage for p_fresh estimates. See `brainstorm/brainstorm_hierarchical_p_fresh.md`. Same status as §2.2 — brainstorm exists; needs empirical go/no-go.
 
+### 2.4 Multi-anchor instantaneous-rate Ridge features (data-gated)
+
+Brainstormed 2026-04-20. Proposal: compute smoothed instantaneous review rates at several anchor timestamps (fractional-time normalized) across the first-review-to-close interval and add them as features to the 17-feature Ridge stack. Intent: some points in the arrival process carry more predictive signal about the final count than others; Ridge learns which anchors matter.
+
+Origin framing: initially pitched as a standalone MVT-based predictor (rate at an "MVT point" × interval ≈ total count). The MVT is operationally vacuous for cross-movie prediction — the theorem's c_i varies per movie with no guarantee that a shared t* exists. The real operation is empirical search for anchor points with low cross-movie variance of `rate(t*) / mean_rate`. Reframed as features for Ridge (composable with existing pool/observation-window signal) instead of a parallel generative estimator.
+
+**Prerequisite (hard blocker).** Need substantially more cohort movies with m/h-confidence timestamps spanning the pre-close window. Per memory, only `the_drama` and `super_mario_galaxy` had useful pre-close minute-level data at the 0.2.0 ship. n=2 is too small to discover stable anchors. Unblocking this item depends on the RT scraper accumulating more live-tracked movies over time.
+
+**Scope when unblocked (notebook tier only):**
+- Normalize time by first-review-to-close gap so non-uniform intervals align on fractional-time anchors (e.g., f ∈ {0.2, 0.4, 0.6, 0.8}).
+- Pick a smoothing window to compute "instantaneous" rate. This reintroduces a bandwidth choice in miniature — document it.
+- Add rate-at-anchor features to the existing 17-feature stack. Cohort LOO snap-by-snap vs 0.2.0 baseline.
+- Decision rule: materially better LOO MAE at early snaps (T-5d / T-4d, where observation-window features are weakest) AND no regression at late snaps. Library integration is a separate backlog item if this wins.
+
+**Known risks:**
+- Smoothing-window choice recapitulates the KDE bandwidth problem the 0.2.0 ship escaped.
+- Local burst/lull near an anchor biases its rate estimate. Mitigate by averaging over nearby anchors or short windows.
+- h/m cohort may not be representative of the full 144-movie cohort; caveat any generalization claim.
+
 ## 3. Historical / resolved
 
 ### 3.1 Kalshi-independent lambda validation — RESOLVED
