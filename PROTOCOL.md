@@ -38,6 +38,7 @@ A brainstorm is a *prerequisite* to a plan, not part of this protocol. This prot
    - Did any edge cases surface that the plan didn't anticipate?
 2. Fix any gaps discovered during validation.
 3. Update docs as needed: CLAUDE.md, brainstorm docs, backlog, and the plan doc itself if the implementation diverged.
+4. Before committing, run `/audit-numbers` + `/audit-pointers` (and `/audit-formulas` if the diff adds math): every numerical claim, pointer (file:line / cite / date), and new formula in the diff must trace to a source. `/ship` runs these automatically.
 
 ---
 

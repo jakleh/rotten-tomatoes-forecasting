@@ -4,11 +4,21 @@ Handoff prompts for starting new conversations on the rotten-tomatoes-forecastin
 
 ---
 
-## Context for All Prompts
+## Handoff convention — READ THIS FIRST
 
-This repo is a pure forecasting library. Its contract ends at `compute_edge() -> (edge_cents, p_yes, p_no)`. Strategy, backtesting, and execution concerns live in the orchestrator repo (`~/Desktop/kalshi-trading/`).
+Every prompt below is a task payload. Before acting on one, run the session-start ritual:
+1. **Foundation:** read `CLAUDE.md` "Current Conventions" (authoritative) + the relevant `BACKLOG.md` section + any findings doc the task names.
+2. **Plans:** read any referenced `plans/*.md` in full (gitignored, local).
+3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 98 green) before touching code.
+4. **Then** start the task.
 
-The package is at `rotten_tomatoes_forecasting/` with 8 public API symbols: `compute_edge`, `build_critic_profiles`, `build_kde_lambda_model`, `estimate_lambda`, `estimate_p_fresh`, `default_training_slugs`, `CriticProfiles`, `KDELambdaModel`.
+A good NEW handoff prompt gives: the task in one line; the foundation docs to read; a prerequisite/STOP check if the task is data-gated; concrete numbered steps; an explicit decision rule + out-of-scope list; and the deliverable.
+
+## Context for all prompts
+
+This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the math is pure DataFrame-in / numbers-out, ending at `compute_edge()`. Per the scripts direction (CLAUDE.md "Project Overview"), eventual deployment is a script that imports the edge-calc + kalshi execution helpers — not the orchestrator.
+
+0.2.0 public API (in `rotten_tomatoes_forecasting/`): `compute_edge`, `estimate_lambda`, `estimate_p_fresh`, `fit_lambda_regressor`, `load_default_regressor`, `extract_lambda_features`, `compute_close_day_phase2`, `LambdaRegressor`, `LambdaPrediction`, `naive_lambda`, `naive_p_fresh`. (The 0.1.x KDE API — `build_critic_profiles`, `KDELambdaModel`, `CriticProfiles`, `default_training_slugs`, etc. — was removed.)
 
 ---
 

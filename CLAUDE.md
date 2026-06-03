@@ -24,7 +24,7 @@ These supersede any conflicting convention in `findings/`, `notebooks/`, `brains
 
 **Snap routing in public API:** `estimate_lambda` takes `snap_days: int` (keyword-only, values in {1, 2, 3, 4, 5}). `snap_dbc` is an internal concept only — never appears in public signatures. Out-of-range snap_days raises.
 
-**Target filter for deployment (orchestrator):** `target_gap > 15d` → skip entirely (architectural ceiling failure zone). See `findings/trading_strategy_from_ridge_errors.md` §2.3.
+**Target filter for deployment (orchestrator):** `target_gap > 15d` → skip entirely (architectural ceiling failure zone — long-lead / festival-film volume is unpredictable from a pre-snap snapshot). Rationale was in `findings/trading_strategy_from_ridge_errors.md`, removed at the 2026-06-02 prune; recoverable from git history.
 
 See `plans/plan_ridge_integration.md` for the full library spec.
 
@@ -32,11 +32,13 @@ See `plans/plan_ridge_integration.md` for the full library spec.
 
 ## Project Overview
 
-Pure forecasting library for Rotten Tomatoes Tomatometer prediction markets. Computes the probability that a movie's final Tomatometer score crosses a given threshold, and the expected edge (in cents) against a market price.
+The focused RT-modeling workspace for Rotten Tomatoes Tomatometer prediction markets. Computes the probability that a movie's final Tomatometer score crosses a given threshold, and the expected edge (in cents) against a market price; the math is pure DataFrame-in / numbers-out, ending at `compute_edge() -> (edge_cents, p_yes, p_no)`.
 
-This is a library, not a trading system. Its contract ends at `compute_edge() -> (edge_cents, p_yes, p_no)`. Strategy, backtesting, execution, and position sizing live in the orchestrator repo (`~/Desktop/kalshi-trading/`).
+**Direction (2026-06-02):** this repo is where the RT model gets refined until it works or the project is killed. Eventual deployment is a thin **script → Vultr VM** that imports the edge-calc here plus the execution/infra helpers in `~/Desktop/kalshi-trading/` — *not* a multi-series orchestrator (that abstraction is being deprecated as premature). Strategy/execution are deliberately kept out of this repo for now. Today `kalshi-trading` (branch `feat/kalshi-har-replacement`) still imports this as a package via `src/series/KXRT/`.
 
-This project connects to the same Neon PostgreSQL database used by the RT scraper (separate repo at `~/Desktop/rotten-tomatoes-analysis/`), but is fully independent -- no shared code, no shared config.
+**Active roadmap:** minute-level review timestamps (~20 movies as of 2026-06-02, up from 2) unlock self-labeling the final 10am-ET score from reviews, measuring the actual close-day review count (the piecewise λ model's final-~10h "phase-2" term, today the flat `C=1` constant), and fitting a single smooth λ(t). The next step is the VoI **Gate 1 / Gate 2** calibration — is the market beatable, and does the Poisson×Binomial architecture clear it with perfect inputs — *before* any model upgrade. See `BACKLOG.md`.
+
+This project reads the same Neon PostgreSQL database the RT scraper populates (separate repo at `~/Desktop/rotten-tomatoes-analysis/`) but shares no code or config.
 
 ## Build Protocol
 
@@ -59,6 +61,7 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │       └── default_regressor.json   # Default LambdaRegressor JSON (~23KB)
 ├── scripts/
 │   └── fit_default_regressor.py     # Refit script for the shipped artifact
+├── tests/                           # 98 tests (edge / features / lambda_model / p_fresh / pool / package)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
@@ -68,35 +71,10 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 ├── .env                        # DATABASE_URL (gitignored)
 ├── reviews.csv                 # Local dump of reviews table (gitignored)
 ├── movies_index.csv            # Movie slugs + bet close dates (gitignored)
-├── notebooks/                  # Model validation notebooks (30+ files; dir is self-describing)
-│   # Ship-candidate validation (current):
-│   ├── phase1_three_way.ipynb              # Library v0.1 vs ship-stack KDE vs Ridge headline comparison
-│   ├── phase1_ridge_tier1.ipynb            # Ridge tier-1: standardize + log/sqrt transforms + α CV
-│   ├── phase1_ridge_tier2.ipynb            # Ridge tier-2: finite-pool features (ship candidate basis)
-│   ├── phase1_ridge_tier2b_a3gap.ipynb     # Ridge tier-2 with A3-gap pool (equivalent to tier 2)
-│   ├── phase1_ridge_tier2c_recent_gap.ipynb # Ridge tier-2 with hybrid recent+gap pool (equivalent)
-│   ├── proposed_ship_stack_test.ipynb      # Ridge refit under ET-midnight convention + C=1 decision
-│   ├── time_series_regression.ipynb        # Original Ridge vs KDE exploration (path_b_lite §9)
-│   # Historical investigations (KDE-era, superseded — all have convention-warning banners):
-│   ├── stratified_training_validation.ipynb # Gap-stratified + bandwidth-cap era (74 cells)
-│   ├── phase1_a2_vs_a3alpha1.ipynb         # Jaccard vs gap-only selector
-│   ├── phase1_e5a_alpha_step.ipynb         # E5a sqrt base_rate (ruled out)
-│   ├── critic_model_validation.ipynb       # KDE model accuracy
-│   ├── misprice_backtest.ipynb             # Deterministic bounds baseline
-│   ├── path_b_lite_weighted_kde.ipynb      # Weighted-KDE cohort win
-│   ├── f_audit.ipynb                        # G1 phase-2 F-audit
-│   ├── _helpers.py                          # Shared helpers imported by all post-tier-1 notebooks
-│   └── .cache/                              # LOO results caches (gitignored)
-├── findings/                   # Model validation findings
-│   # Current ship story:
-│   ├── ridge_lambda_investigation.md         # Ship candidate (ridge_t2); 3-tier optimization; pool robustness
-│   ├── trading_strategy_from_ridge_errors.md # Orchestrator-facing: snap gates, target filters, sizing
-│   # Historical (supersede-banner'd):
-│   ├── path_b_lite_investigation.md          # Path B-lite (14 KDE interventions; architectural ceiling)
-│   ├── stratified_training_investigation.md  # Stratified + bandwidth + piecewise era (superseded)
-│   ├── critic_kde_model_validation.md        # Original KDE model calibration
-│   ├── embargo_anchor_investigation.md       # Embargo-anchor rebuild (rejected 2026-04-17)
-│   └── kalshi_rt_contract_rules.md           # Contract rules: resolution, position limits, fallbacks
+├── findings/                   # Live findings only (KDE-era investigations pruned 2026-06-02)
+│   ├── ridge_lambda_investigation.md   # Ship candidate (ridge_t2); 3-tier optimization; pool robustness
+│   ├── kalshi_rt_contract_rules.md     # Contract: resolution, expiration (1st Monday after wide release), fallbacks
+│   └── archive/                        # Superseded KDE-era investigations (banner'd; replay via git history)
 ├── rt-rules-contract.pdf       # Kalshi RT contract rules (source document)
 ├── plans/                      # Implementation plans (gitignored)
 └── brainstorm/                 # Model design brainstorms (gitignored)
@@ -124,7 +102,7 @@ from rotten_tomatoes_forecasting import (
 - `rotten_tomatoes_forecasting.pool.A1Context`, `build_a1_pool_context`, `compute_critic_base_rates` — pool primitives used by `extract_lambda_features` and `estimate_p_fresh`.
 - `rotten_tomatoes_forecasting.features.FEATURE_NAMES`, `VALID_SNAP_DAYS`, `midnight_et_of_close`, `apply_noon_shift` — extraction helpers + constants.
 
-This library is pure DataFrame-in / numbers-out. It does NOT access a database. Callers own DB access and pass review DataFrames to the public API. See `~/Desktop/kalshi-trading/src/series/rotten_tomatoes/db.py` for the reference consumer.
+This package is pure DataFrame-in / numbers-out. It does NOT access a database. Callers own DB access and pass review DataFrames to the public API. Reference consumer: `~/Desktop/kalshi-trading/src/series/KXRT/db.py` (branch `feat/kalshi-har-replacement`).
 
 ## Tech Stack
 
@@ -139,11 +117,9 @@ This library is pure DataFrame-in / numbers-out. It does NOT access a database. 
 ```bash
 # Development (from this repo)
 uv sync
-
-# As a dependency (from another project)
-pip install -e ~/Desktop/rotten-tomatoes-forecasting
-# or: pip install git+https://github.com/jakleh/rotten-tomatoes-forecasting.git
 ```
+
+`~/Desktop/kalshi-trading/` currently imports this via a local path dependency (an optional `rt` extra; `rotten-tomatoes-forecasting @ file://...`). Per the scripts direction, the eventual consumer is a script that imports the edge-calc directly rather than installing a package — don't invest in the packaging/publish path.
 
 ## How to Run
 
@@ -228,11 +204,11 @@ See `findings/ridge_lambda_investigation.md` for the full validation and `plans/
 
 **What was tried and why alternatives were abandoned:**
 - *KDE per-critic model* (0.1.x): architectural ceiling on critic-magnet / late-surge movies — 14 interventions couldn't break through. Ridge bypasses the `base_rate × KDE × exclusion` sum by regressing directly on observable features. See `findings/path_b_lite_investigation.md`.
-- *Deterministic bounds (worst/best case)*: too conservative; by the time bounds lock the outcome the market has already corrected. See `notebooks/misprice_backtest.ipynb`.
+- *Deterministic bounds (worst/best case)*: too conservative; by the time bounds lock the outcome the market has already corrected. (Validated in the now-pruned `misprice_backtest.ipynb`; in git history.)
 
 ## Known Issues
 
-**Historical notebooks + `_helpers.py` assume 0.1.x KDE.** `notebooks/_helpers.py` and most of the KDE-era notebooks (`stratified_training_validation.ipynb`, `path_b_lite_weighted_kde.ipynb`, `critic_model_validation.ipynb`, etc.) import `rotten_tomatoes_forecasting.critic_model`, which was removed at 0.2.0. These are retained as preserved historical validation artifacts (with CONVENTION WARNING banners) and are not expected to re-run against 0.2.0 — to replay one, check out an earlier commit where `critic_model.py` still exists. The Ridge-era notebooks (`phase1_ridge_tier2.ipynb`, `proposed_ship_stack_test.ipynb`) also import `_helpers` today and inherit that breakage; recreating their results under 0.2.0 is a separate exercise against the new public API.
+**None tracked.** The KDE-era notebooks + `notebooks/_helpers.py` — which imported the removed `critic_model` and so couldn't run under 0.2.0 — were deleted in the 2026-06-02 prune (replayable from git history). New analysis notebooks should import the 0.2.0 public API directly.
 
 ## Dependencies
 
