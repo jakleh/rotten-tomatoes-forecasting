@@ -203,7 +203,7 @@ Replaces the per-critic KDE architecture (0.1.x). Per-snap Ridge regression on 1
 See `findings/ridge_lambda_investigation.md` for the full validation and `plans/plan_ridge_integration.md` for integration rationale.
 
 **What was tried and why alternatives were abandoned:**
-- *KDE per-critic model* (0.1.x): architectural ceiling on critic-magnet / late-surge movies — 14 interventions couldn't break through. Ridge bypasses the `base_rate × KDE × exclusion` sum by regressing directly on observable features. See `findings/path_b_lite_investigation.md`.
+- *KDE per-critic model* (0.1.x): architectural ceiling on critic-magnet / late-surge movies — 14 interventions couldn't break through. Ridge bypasses the `base_rate × KDE × exclusion` sum by regressing directly on observable features. See `findings/archive/path_b_lite_investigation.md`.
 - *Deterministic bounds (worst/best case)*: too conservative; by the time bounds lock the outcome the market has already corrected. (Validated in the now-pruned `misprice_backtest.ipynb`; in git history.)
 
 ## Known Issues

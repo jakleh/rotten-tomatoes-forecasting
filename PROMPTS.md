@@ -22,6 +22,28 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
+## Next session — START HERE (handoff 2026-06-04)
+
+**Shipped this session:** the prune (`bf8892e` — deleted `notebooks/`, archived 4 KDE-era findings) + docs refocus (`a024923` — CLAUDE.md / PROTOCOL `/audit-*` line / this PROMPTS template). Persisted but gitignored/out-of-repo: `plans/plan_gate_1_2_calibration.md` and the gate-design + `db_facts` memories.
+
+**Read first:** CLAUDE.md "Current Conventions" + "Project Overview"; `plans/plan_gate_1_2_calibration.md` IN FULL; memories `project_gate_calibration_design`, `feedback_db_facts_verification`, `project_minute_level_movies`.
+
+**Task — start Gate Phase 0** (the plan is the spec):
+1. Verify Kalshi serves historical **minute price** (candlesticks) for the *closed* RT cohort — kalshi-trading side / operator's API access. Hard prerequisite.
+2. First **`db_facts`** read-only query functions (pinned by `WHERE id <= N`): settle (a) scraper-timing — does each movie have reviews through its 10am close; (b) the **dense-near-close movie count** (Gate-2 STOP-gate `n`); (c) any `timestamp_confidence='s'` rows.
+3. **D1 coverage notebook** (per-movie m/h-vs-day fraction near close) + pull **Kalshi-`result` labels**.
+4. **Gate 1** (market calibration + incremental-info, full 144 cohort) — runs regardless of dense-n.
+
+**DECIDE FIRST (operator flagged 2026-06-04) — mixed-granularity snapping:** with `d`/`h`/`m` reviews interleaved, how do we place the coarser ones? (A) each review at its own honest bound (`d`→midnight, `h`→top-of-hour, `m`→minute); (B) the d/h/m *ablation* = uniformly coarsen ALL reviews to the tested level (measures granularity's marginal value); (C) interpolate a coarse review's position from neighboring fine reviews (refinement of A). Distinguish the **real best-data calibration (A/C, mixed)** from the **ablation (B, uniformly coarsened)**. Likely run A vs C, keep B as the value-of-granularity measurement. Resolve before building the oracle.
+
+**Locked (don't re-litigate):** oracle = realized λ/p_fresh (best inputs; dispersion = genuine real-time uncertainty → real-time-forecaster ceiling, NOT perfect foresight); +1 min look-ahead lag; Kalshi `result` as label; orderbook-mid (not last-trade) as "the market"; pass = Brier + PnL 2×2. See `project_gate_calibration_design`.
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect 98 green); `git log --oneline -3`.
+
+**Push status:** all work pushed to `origin/main` at close.
+
+---
+
 ### Prompt 1: Kalshi-independent lambda validation (Backlog 1.1)
 
 ```

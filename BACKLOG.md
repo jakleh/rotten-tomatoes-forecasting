@@ -51,7 +51,13 @@ Set up GitHub Actions to run tests on push. Currently manual: `uv run python -m 
 
 ### 1.4 p_fresh calibration audit
 
-`estimate_p_fresh` is unchanged at 0.2.0 (moves from `critic_model.py` to `p_fresh.py` but behavior identical). Current validation (`findings/critic_kde_model_validation.md`) shows excellent aggregate calibration (MAE=0.031 at T-1d) but hasn't been broken down by movie characteristics (blockbuster vs indie, sequel vs original, long-gap vs short-gap). Worth auditing post-0.2.0 ship to catch any systematic bias that correlates with deployment target-type filters.
+`estimate_p_fresh` is unchanged at 0.2.0 (moves from `critic_model.py` to `p_fresh.py` but behavior identical). Current validation (`findings/archive/critic_kde_model_validation.md`) shows excellent aggregate calibration (MAE=0.031 at T-1d) but hasn't been broken down by movie characteristics (blockbuster vs indie, sequel vs original, long-gap vs short-gap). Worth auditing post-0.2.0 ship to catch any systematic bias that correlates with deployment target-type filters.
+
+### 1.5 Gate 1 / Gate 2 calibration — ACTIVE PRIORITY (2026-06-04)
+
+VoI feasibility gates before any model upgrade: can the Poisson×Binomial architecture beat the Kalshi market, and is there edge at all? Full design: `plans/plan_gate_1_2_calibration.md` (gitignored) + memory `project_gate_calibration_design`. Gate 1 = market calibration + incremental-info over price (full cohort). Gate 2 = oracle λ/p_fresh (realized = MLE, the best inputs that exist) through `compute_edge` vs market (dense m/h subset); pass = **both** Brier-skill AND realized-PnL-net-of-cost beat the market (cluster-bootstrap by movie); fail → one form-ablation (scalar→time-varying p_fresh) then pivot to a direct `features→P(Yes)` regressor. Next: Phase 0 (Kalshi minute-price availability check + first `db_facts` queries) → D1 coverage + Kalshi-`result` labels → Gate 1.
+
+Parked (revisit iff Gates pass): the **ridge golden-fixture** regression test (artifact-output pinning; its `compute_edge` battery is folded into the Gate plan). Supporting discipline: **`db_facts`** read-only query functions pinned by serial id — memory `feedback_db_facts_verification`. Cleanup (low-priority): historical §3 + superseded PROMPTS Prompts 1–9 still cite pre-prune findings paths (now under `findings/archive/`) and the deleted `trading_strategy_from_ridge_errors.md` (git history); fix opportunistically.
 
 ## 2. Deferred model improvements
 
