@@ -59,6 +59,22 @@ VoI feasibility gates before any model upgrade: can the Poisson×Binomial archit
 
 Parked (revisit iff Gates pass): the **ridge golden-fixture** regression test (artifact-output pinning; its `compute_edge` battery is folded into the Gate plan). Supporting discipline: **`db_facts`** read-only query functions pinned by serial id — memory `feedback_db_facts_verification`. Cleanup (low-priority): historical §3 + superseded PROMPTS Prompts 1–9 still cite pre-prune findings paths (now under `findings/archive/`) and the deleted `trading_strategy_from_ridge_errors.md` (git history); fix opportunistically.
 
+### 1.6 DB access security-layer test (deferred, not blocking)
+
+Verify `agent_neon_read_only`'s **grant-level** least-privilege by attempting the full write set — `CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE` — and confirming each is **denied**. Defense-in-depth, distinct from the replica's infra read-only.
+
+- **Test on the PRIMARY, not the replica.** The agent connects only to the read *replica* (in `.env`, sandbox-allowlisted via `.claude/settings.local.json` → `sandbox.network.allowedDomains`), where hot-standby blocks *all* writes regardless of grant — so a write-rejection on the replica proves the infra read-only but **masks** the role's actual grants. Only the primary exercises the GRANT layer.
+- **Never touch `reviews`.** Use a throwaway scratch table/schema; drop it after.
+- Requires a primary connection for the role (the agent normally has only the replica) → likely an operator-run one-off, or a temporary primary string the agent uses then discards.
+- Expected: every write denied (`permission denied`). If any succeeds, the grant is broader than intended → tighten it.
+- Why it matters: separates "replica is read-only" (infra, already true) from "role has no write grants" (the least-privilege we configured) — the grant layer is what would protect real data if the agent ever obtained a primary endpoint.
+
+### 1.7 Weekly settled-market recorder (Gate cohort accumulation)
+
+The Kalshi API retains only a rolling recent window of KXRT markets — as of 2026-06-07, **16 settled movies / 280 markets**, closing 2026-04-06 → 2026-06-01 (earliest market of any status: 2026-02-02). Older resolved RT markets (the 2024–2025 ones in `movies_index.csv`) are gone from the API. So the gate cohort grows only ~2 movies/week and **must be captured before it ages out**.
+
+Build a periodic (≈weekly) recorder that snapshots, for newly-settled KXRT markets: market metadata (`floor_strike`/`result`/`close_time`/`settlement_ts`), the full 1-min candle history (mids), and the self-labeled 10am score (from the reviews DB). Append to the persistent cohort cache (`gates/_cache/`). Without it the cohort is permanently capped at the API's retention window. Reuses `gates/kalshi_data.py` + `gates/db_facts.py`. Related: `project_orderbook_snapshots` (a live orderbook-*depth* recorder is a separate, heavier want; this one only needs the public candle/result snapshot). Optional one-off: check whether `~/Desktop/kalshi-trading/` already cached older KXRT history that could backfill the cohort.
+
 ## 2. Deferred model improvements
 
 ### 2.1 Finite-pool model (partially addressed at 0.2.0)

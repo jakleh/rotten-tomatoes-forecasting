@@ -22,7 +22,25 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
-## Next session — START HERE (handoff 2026-06-04)
+## Next session — START HERE (handoff 2026-06-07)
+
+**Shipped this session (one close-session commit):** new `gates/` package — `kalshi_data.py` (public Kalshi/KXRT fetcher, no auth), `db_facts.py` (read-only `as_of_id`-pinned reviews queries), `build_cohort.py` + `build_snap_state.py` (drivers → `gates/_cache/`, gitignored), `_make_gate1*.py` (nbformat notebook builders); `notebooks/gate1_calibration.ipynb` + `gate1b_incremental_info.ipynb`; `BACKLOG.md` §1.6 (DB write-perm security test) + §1.7 (weekly settled-market recorder); `.gitignore` += `gates/_cache/`; CLAUDE.md Gate-1 status. Gitignored/out-of-repo: heavy `plans/plan_gate_1_2_calibration.md` edits + new/updated memories.
+
+**Gate-1 result (directional, 16-movie settled KXRT cohort) — read `project_gate1_findings` IN FULL:** the market PRICES the observed review state (no current-state edge — Gate-1b LOMO logistic: review signal adds ~0 OOS, CI straddles 0, early-snap NEGATIVE); it's calibrated where it quotes but contested-region skill is only ~0.30 (the 0.92 headline was extreme-inflated); and it's STALE/THIN — median last real two-sided quote ~4d before close; the 28 markets quoted within 6h of close are all decided (0 contested). **Tradeability, not forecasting, is the binding constraint.** All numbers were adversarially reviewed + independently recomputed.
+
+**NEXT TASK (operator-confirmed): MAP THE TRADEABLE-EDGE ARENA.** Over time-to-close, characterize the (market × minute) cells that are BOTH contested (`0.2 < mid < 0.8`) AND have a live two-sided quote (`mid` not NaN): does a live-contested window exist (likely *earlier*, while scores still form), and how large (movies, market-minutes)? This is the cheap binding-constraint gate before the Gate-2 oracle — if ~empty even early → edge isn't capturable on this cohort (near-decisive abandon signal); if a window exists → that's where Gate 2 runs, benchmarked against the **actual at/before-T quote with its staleness**, not an idealized price. Work from cached `gates/_cache/{cohort_markets,candles,gate1b_input}.csv` (rebuild via `python -m gates.build_cohort` only if absent, ~23 min). Fold in the review's methodology fixes (read once per market, not per snap; staleness column; liquidity stratification). Conditional follow-on: chase the faint contested-at-1d under-pricing hint (mean mid 0.56 → realized 0.77, n=17 — de-`billie_eilish`, one-obs-per-market).
+
+**Read in full at start:** `plans/plan_gate_1_2_calibration.md` (esp. "Verification + review amendments (2026-06-07)"); memories `project_gate1_findings`, `project_gate_calibration_design`, `reference_kalshi_access`, `reference_db_access`, `reference_notebook_execution`.
+
+**Conventions this session:** `db_facts` read-only `as_of_id`-pinned queries (DB analog of `/audit-numbers`); two-oracle framing (pure publication-time = architecture ceiling; scrape-lagged = current-pipeline value); Gate-1 reads are one-obs-per-market + conditional-on-tradeable + contested-region-stratified; asymmetric Gate-2 fork (only a clear fail abandons; "inconclusive" never does); **notebook execution needs `dangerouslyDisableSandbox`** (Jupyter kernel binds local sockets — see `reference_notebook_execution`).
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect 98 green); `git log --oneline -3`; confirm `gates/_cache/cohort_markets.csv` exists (else rebuild). The Kalshi/Neon hosts are allowlisted in `.claude/settings.local.json` and should be **live this fresh session** → try DB/Kalshi reads sandboxed first; fall back to `dangerouslyDisableSandbox` if blocked.
+
+**Push status:** committed + pushed to `origin/main` at this session close.
+
+---
+
+## Prior handoff (2026-06-04) — SUPERSEDED 2026-06-07 (Gate Phase 0 + Gate 1 completed)
 
 **Shipped this session:** the prune (`bf8892e` — deleted `notebooks/`, archived 4 KDE-era findings) + docs refocus (`a024923` — CLAUDE.md / PROTOCOL `/audit-*` line / this PROMPTS template). Persisted but gitignored/out-of-repo: `plans/plan_gate_1_2_calibration.md` and the gate-design + `db_facts` memories.
 

@@ -38,6 +38,8 @@ The focused RT-modeling workspace for Rotten Tomatoes Tomatometer prediction mar
 
 **Active roadmap:** minute-level review timestamps (~20 movies as of 2026-06-02, up from 2) unlock self-labeling the final 10am-ET score from reviews, measuring the actual close-day review count (the piecewise λ model's final-~10h "phase-2" term, today the flat `C=1` constant), and fitting a single smooth λ(t). The next step is the VoI **Gate 1 / Gate 2** calibration — is the market beatable, and does the Poisson×Binomial architecture clear it with perfect inputs — *before* any model upgrade. See `BACKLOG.md`.
 
+**Gate-1 status (2026-06-07):** Gate 1 ran directionally on the 16-movie settled KXRT cohort (code in the new `gates/`; analyses in `notebooks/gate1_calibration.ipynb` + `gate1b_incremental_info.ipynb`). Result: the market **prices the observed review state** (no current-state edge) and is **stale/thin** — most order books go one-sided ~4 days before close, and contested markets have no live two-sided quote near close — so **tradeability, not forecasting, is the binding constraint**. Gate 2 (the oracle) is gated on a tradeable-edge-surface check. Full result: memory `project_gate1_findings` + `plans/plan_gate_1_2_calibration.md`.
+
 This project reads the same Neon PostgreSQL database the RT scraper populates (separate repo at `~/Desktop/rotten-tomatoes-analysis/`) but shares no code or config.
 
 ## Build Protocol
