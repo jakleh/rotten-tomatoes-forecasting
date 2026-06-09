@@ -22,7 +22,27 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
-## Next session — START HERE (handoff 2026-06-07)
+## Next session — START HERE (handoff 2026-06-09)
+
+**Shipped this session:** the **tradeable-edge arena map** (the Gate-1 handoff's binding-constraint gate). New: `gates/probe_candle_open.py` (Kalshi candle bid/ask open+close probe), `gates/_make_arena_nb.py` (codegen), `notebooks/arena_map.ipynb` (executed; the citable numbers), cache artifacts `gates/_cache/{candle_open_probe.csv, arena_spans.csv, arena_occupancy.png, arena_death_vs_formation.png}` (gitignored). Docs: "Arena map result (2026-06-09)" section in `plans/plan_gate_1_2_calibration.md` (gitignored), CLAUDE.md Gate-status update, BACKLOG 1.5 update, memory `project_arena_map` (+ `reference_kalshi_access` candle-semantics fix).
+
+**Arena result (read `project_arena_map` + the plan section IN FULL):** the arena EXISTS and is EARLY. Kalshi candles are activity-gated but the book persists through silent gaps (P=1.00000, n=21,078 gap-pairs) → LOCF book-state reconstruction is valid. Contested∧≤10¢-spread occupancy ramps 0% (last hour) → 22% (5-7d) → 39% (>14d); at **T-3d all 16/16 movies** have a contested tight (mostly fresh) book with median **28% of reviews still to come**; T-5d: 14 movies / 65% to come but 5 of the 16 movies pre-embargo (0 obs reviews); ≤12h ~dead (confirms Gate 1). Movie books die at median 12.3h pre-close with only 0.7% of reviews left → **the tradeable-edge window is T-2d..T-5d, centered T-3d**. Contested under-pricing hint persists honestly measured (+0.08 at 2d → +0.24 at 1d, realized−mid) but all staleness-honest CIs straddle 0 — hint, not result.
+
+**NEXT TASK — GATE 2 (unblocked, now scoped to the arena):**
+1. **Dense-cohort guard first (STOP-gate):** via `db_facts` (read-only, `as_of_id`-pinned), count the 16 cohort movies live-tracked-through-snap (m/h timestamps near T-2d..T-5d snaps, dense through close). Below the (pre-registered, power-calc'd) floor → "underpowered/inconclusive", NOT fail.
+2. **Oracle math + tests** per the plan ("Math under test"): oracle λ = realized remaining count / t_rem (+1min lag, two-oracle framing), oracle p_fresh; `compute_edge` battery vs an independent reference implementation (exact-integer boundary: Yes iff `200·fresh ≥ (2X+1)·total`).
+3. **Gate 2 run:** oracle → `compute_edge` → P(Yes) at T-2d/T-3d/T-5d on the ct cells in `gates/_cache/arena_spans.csv`, benchmarked against the **state-at-snap book with its staleness** (entry crosses the spread: Yes at ask, No at 1−bid) — NOT an idealized mid. Brier + PnL 2×2, cluster-boot by movie; asymmetric fork (only a clear fail + clean form-diagnostic abandons).
+4. Opportunistic: **BACKLOG 1.7 recorder is getting urgent** — the API retention window rolls; every un-snapshotted settling week is cohort permanently lost (the contested-hint needs n).
+
+**Conventions this session (all still apply):** `db_facts` discipline; one-obs-per-market + staleness columns + spread stratification for any market-level claim; notebooks are the citable-number source (`/audit-numbers`); notebook execution needs `dangerouslyDisableSandbox` (kernel sockets — `reference_notebook_execution`); Kalshi/Neon hosts are sandbox-allowlisted and verified live (Kalshi probe ran sandboxed this session).
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (98 green); `git log --oneline -3`; confirm `gates/_cache/{cohort_markets,candles,gate1b_input,arena_spans}.csv` exist (cohort/candles rebuild: `python -m gates.build_cohort`, ~23 min; arena_spans: re-execute `notebooks/arena_map.ipynb`).
+
+**Push status:** committed locally at this session close; `git push origin main` left to the operator (agent push to main was permission-blocked).
+
+---
+
+## Prior handoff (2026-06-07) — SUPERSEDED 2026-06-09 (arena map completed; Gate 2 unblocked)
 
 **Shipped this session (one close-session commit):** new `gates/` package — `kalshi_data.py` (public Kalshi/KXRT fetcher, no auth), `db_facts.py` (read-only `as_of_id`-pinned reviews queries), `build_cohort.py` + `build_snap_state.py` (drivers → `gates/_cache/`, gitignored), `_make_gate1*.py` (nbformat notebook builders); `notebooks/gate1_calibration.ipynb` + `gate1b_incremental_info.ipynb`; `BACKLOG.md` §1.6 (DB write-perm security test) + §1.7 (weekly settled-market recorder); `.gitignore` += `gates/_cache/`; CLAUDE.md Gate-1 status. Gitignored/out-of-repo: heavy `plans/plan_gate_1_2_calibration.md` edits + new/updated memories.
 

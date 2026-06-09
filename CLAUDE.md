@@ -38,7 +38,9 @@ The focused RT-modeling workspace for Rotten Tomatoes Tomatometer prediction mar
 
 **Active roadmap:** minute-level review timestamps (~20 movies as of 2026-06-02, up from 2) unlock self-labeling the final 10am-ET score from reviews, measuring the actual close-day review count (the piecewise λ model's final-~10h "phase-2" term, today the flat `C=1` constant), and fitting a single smooth λ(t). The next step is the VoI **Gate 1 / Gate 2** calibration — is the market beatable, and does the Poisson×Binomial architecture clear it with perfect inputs — *before* any model upgrade. See `BACKLOG.md`.
 
-**Gate-1 status (2026-06-07):** Gate 1 ran directionally on the 16-movie settled KXRT cohort (code in the new `gates/`; analyses in `notebooks/gate1_calibration.ipynb` + `gate1b_incremental_info.ipynb`). Result: the market **prices the observed review state** (no current-state edge) and is **stale/thin** — most order books go one-sided ~4 days before close, and contested markets have no live two-sided quote near close — so **tradeability, not forecasting, is the binding constraint**. Gate 2 (the oracle) is gated on a tradeable-edge-surface check. Full result: memory `project_gate1_findings` + `plans/plan_gate_1_2_calibration.md`.
+**Gate-1 status (2026-06-07):** Gate 1 ran directionally on the 16-movie settled KXRT cohort (code in the new `gates/`; analyses in `notebooks/gate1_calibration.ipynb` + `gate1b_incremental_info.ipynb`). Result: the market **prices the observed review state** (no current-state edge) and is **stale/thin** — most order books go one-sided ~4 days before close, and contested markets have no live two-sided quote near close — so **tradeability, not forecasting, is the binding constraint**. Full result: memory `project_gate1_findings` + `plans/plan_gate_1_2_calibration.md`.
+
+**Arena-map status (2026-06-09):** the tradeable-edge-surface check ran (`notebooks/arena_map.ipynb`): Kalshi candles are activity-gated but the order book persists through silent gaps (probe: P(state identical across gap)=1.00000) → per-minute LOCF book reconstruction is valid. The contested∧tight-spread arena **exists and is early** — at T-3d all 16/16 movies have a contested ≤10¢-spread book with median 28% of reviews still to come; near-close (≤12h) it is ~empty. **The tradeable window is T-2d..T-5d (center T-3d); Gate 2 is unblocked** there, benchmarked against the state-at-snap book (spread-crossing entry) using `gates/_cache/arena_spans.csv`. See the "Arena map result (2026-06-09)" section of `plans/plan_gate_1_2_calibration.md` + memory `project_arena_map`.
 
 This project reads the same Neon PostgreSQL database the RT scraper populates (separate repo at `~/Desktop/rotten-tomatoes-analysis/`) but shares no code or config.
 
@@ -63,6 +65,17 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │       └── default_regressor.json   # Default LambdaRegressor JSON (~23KB)
 ├── scripts/
 │   └── fit_default_regressor.py     # Refit script for the shipped artifact
+├── gates/                           # Gate-calibration data layer (NOT part of the shipped package)
+│   ├── kalshi_data.py          # Public Kalshi/KXRT fetcher (no auth; stdlib urllib)
+│   ├── db_facts.py             # Read-only as_of_id-pinned reviews queries
+│   ├── build_cohort.py         # Driver: settled cohort + 1-min candles -> _cache/ (network)
+│   ├── build_snap_state.py     # Driver: per-(market,snap) mid + observed state -> _cache/ (DB)
+│   ├── probe_candle_open.py    # Driver: candle bid/ask open+close probe (LOCF validation)
+│   ├── _make_gate1_nb.py / _make_gate1b_nb.py / _make_arena_nb.py   # nbformat notebook codegen
+│   └── _cache/                 # Cached CSVs/PNGs incl. arena_spans.csv (gitignored)
+├── notebooks/                       # Gate analyses (cache-only, sandbox-safe; the citable numbers)
+│   ├── gate1_calibration.ipynb / gate1b_incremental_info.ipynb      # Gate 1 (2026-06-07)
+│   └── arena_map.ipynb              # Tradeable-edge arena map (2026-06-09)
 ├── tests/                           # 98 tests (edge / features / lambda_model / p_fresh / pool / package)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
