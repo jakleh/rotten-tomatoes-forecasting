@@ -15,8 +15,8 @@ the edge dies** — and is the shipped 0.2.0 estimator's error already inside th
 
 **Pre-registered design (locked before execution):**
 - Cells: the Gate-2 pure-oracle cells (`_cache/gate2_cells.csv`), primary snaps
-  T-2d/3d/4d; headline set = the pooled unique markets (priority 3d>2d>4d; n=39/13
-  movies — the most-powered Gate-2 read).
+  T-2d/3d/4d; headline set = the pooled unique markets (priority 3d>2d>4d; n=36/12
+  movies ex-animal_farm — the most-powered Gate-2 read).
 - Systematic perturbation: `λ̂ = λ_oracle × m`, m ∈ {0.25, 0.4, 0.55, 0.7, 0.85, 1.0,
   1.2, 1.5, 2.0, 3.0}; `p̂ = clip(p_fresh_oracle + δ, 0, 1)`,
   δ ∈ {−0.20 … +0.20 step 0.05}. Recompute `compute_edge` per cell per (m, δ); same
@@ -34,7 +34,7 @@ the edge dies** — and is the shipped 0.2.0 estimator's error already inside th
   PROXY, not a measurement; ratios computed in the overlay cell from BACKLOG §1.1
   MAEs {T-4d 21.10, T-3d 9.96, T-2d 3.42} ÷ these cells' median remaining counts).
   p_fresh: §1.4 cites estimator MAE 0.031 (T-1d, old validation) → δ ≈ ±0.03..0.05.
-- Everything downstream of `gate2_cells.csv` (as_of_id=648979); n = 13 movies →
+- Everything downstream of `gate2_cells.csv` (as_of_id=648979, ex-animal_farm data_not_ready 2026-06-10); n = 12 movies →
   **directional**.
 """
 
@@ -57,7 +57,7 @@ pool['t_rem'] = pool['snap'].map(T_REM)
 pool['obs_fresh'] = (pool['obs_score'] * pool['obs_total']).round().fillna(0).astype(int)
 print(f"pooled cells: {len(pool)} markets / {pool['slug'].nunique()} movies "
       f"(snaps {pool['snap'].value_counts().to_dict()})")
-assert len(pool) == 39 and pool['slug'].nunique() == 13
+assert len(pool) == 36 and pool['slug'].nunique() == 12  # ex-animal_farm (data_not_ready, 2026-06-10)
 
 M_GRID = np.array([0.25, 0.4, 0.55, 0.7, 0.85, 1.0, 1.2, 1.5, 2.0, 3.0])
 D_GRID = np.round(np.arange(-0.20, 0.201, 0.05), 2)
@@ -129,12 +129,12 @@ def show(mat, title, fmt='{:+.1f}'):
     print(f'\\n=== {title} ===')
     print(df.map(lambda v: fmt.format(v)).to_string())
 
-show(pnl_mean, 'mean PnL (cents/contract), pooled n=39')
+show(pnl_mean, 'mean PnL (cents/contract), pooled n=36')
 show(pnl_lo, 'PnL CI95 lower bound (cluster-boot by movie)')
 show(br_lo, 'Brier-diff CI95 lower bound', fmt='{:+.3f}')
 band = (pnl_lo > 0) & (br_lo > 0)
 show(band.astype(int), 'EDGE-PRESERVING BAND (1 = both CI-lowers > 0)', fmt='{:d}')
-show(n_trades.astype(int), 'trades taken (of 39)', fmt='{:d}')
+show(n_trades.astype(int), 'trades taken (of 36)', fmt='{:d}')
 
 fig, ax = plt.subplots(figsize=(8.5, 5))
 im = ax.imshow(pnl_mean, cmap='RdYlGn', vmin=-30, vmax=30, aspect='auto')
@@ -224,7 +224,7 @@ MD_TAIL = """## Reading guide
   at boundaries).
 - The Ridge overlay is a PROXY ONLY (cross-convention, older cohort). Gate 3b = run
   `estimate_lambda`/`estimate_p_fresh` for real on these cells.
-- Everything is downstream of `gate2_cells.csv` (as_of_id=648979); n = 13 movies →
+- Everything is downstream of `gate2_cells.csv` (as_of_id=648979, ex-animal_farm data_not_ready 2026-06-10); n = 12 movies →
   directional.
 """
 

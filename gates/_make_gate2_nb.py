@@ -18,9 +18,13 @@ Poisson×Binomial architecture beat the state-at-snap book on the tradeable aren
 Dispersion stays Poisson×Binomial — this is the **real-time-forecaster ceiling**, not
 perfect foresight.
 
-- **Cells:** oracle-clean movies (pre-registered guard, `gate2_density.ipynb`) ×
-  contested (0.2<mid<0.8) ∧ spread≤10¢ state-at-snap books, snaps **T-2d/T-3d/T-4d**
-  (primary; T-3d central) + T-1d (secondary). One obs per market within a snap.
+- **Cells:** oracle-clean movies (pre-registered guard, `gate2_density.ipynb`) ∧
+  **data-ready** (2026-06-10 readiness criterion: the movie's self-label must land inside
+  the score interval implied by its own settlement results — `animal_farm_2025` fails it,
+  its DB history being provably incomplete; see `gate2_integrity_recheck.ipynb` +
+  BACKLOG §1.9) × contested (0.2<mid<0.8) ∧ spread≤10¢ state-at-snap books, snaps
+  **T-2d/T-3d/T-4d** (primary; T-3d central) + T-1d (secondary). One obs per market
+  within a snap.
 - **Two oracles:** `pure` (publication-time +1min — architecture ceiling, headline) and
   `lagged` (scrape-time visibility — current-pipeline reality). Gap = value of faster
   scraping.
@@ -87,13 +91,21 @@ bk['fresh'] = bk['stale_min'] <= 60
 bk['snap_days'] = (bk['snap_h'] // 24).astype(int)
 bk['movie_clean'] = [bool(clean.get((s, d), False))
                      for s, d in zip(bk['slug'], bk['snap_days'])]
-cells = bk[bk['ct'] & bk['movie_clean']].copy()
-print('Gate-2 cells (oracle-clean ∧ contested ∧ spread<=10c), one row per market×snap:')
+# Data-readiness exclusion (2026-06-10 incident): movies whose DB review history is
+# provably incomplete — self-label outside the score interval implied by the event's OWN
+# settlement results (gates/validate_recorded.py; backfill tracked in BACKLOG 1.9).
+DATA_NOT_READY = ['animal_farm_2025']
+bk['data_ready'] = ~bk['slug'].isin(DATA_NOT_READY)
+cells = bk[bk['ct'] & bk['movie_clean'] & bk['data_ready']].copy()
+print('Gate-2 cells (oracle-clean ∧ data-ready ∧ contested ∧ spread<=10c), one row per market×snap:')
 print(cells.groupby('snap').agg(markets=('ticker', 'size'), movies=('slug', 'nunique'),
                                 fresh_books=('fresh', 'sum')).to_string())
 dirty = bk[bk['ct'] & ~bk['movie_clean']]
 print('\\nct cells EXCLUDED by the cohort guard (dirty movie at snap):',
       dirty.groupby('snap').size().to_dict())
+nr = bk[bk['ct'] & bk['movie_clean'] & ~bk['data_ready']]
+print('ct cells EXCLUDED as data_not_ready (animal_farm_2025, BACKLOG 1.9):',
+      nr.groupby('snap').size().to_dict())
 """
 
 C_ORACLE = """# Oracle inputs per (movie, snap) x mode -> P(Yes) per market via compute_edge
