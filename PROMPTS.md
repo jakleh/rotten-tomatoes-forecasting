@@ -9,7 +9,7 @@ Handoff prompts for starting new conversations on the rotten-tomatoes-forecastin
 Every prompt below is a task payload. Before acting on one, run the session-start ritual:
 1. **Foundation:** read `CLAUDE.md` "Current Conventions" (authoritative) + the relevant `BACKLOG.md` section + any findings doc the task names.
 2. **Plans:** read any referenced `plans/*.md` in full (gitignored, local).
-3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 651 green as of 2026-06-10) before touching code.
+3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 662 green as of 2026-06-10 PM) before touching code.
 4. **Recorder staleness:** `.venv/bin/python -m gates.recorder --check` — exit 1 means run `python -m gates.recorder` (sandbox-off for the DB join; `--no-db` works sandboxed and tops up later). The session ritual IS the §1.7 recorder's scheduler; `gates/recorded/` is the committed system of record.
 5. **Then** start the task.
 
@@ -23,7 +23,29 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
-## Next session — START HERE (handoff 2026-06-10 — RECORDER SHIPPED; INTEGRITY INCIDENT RESOLVED; GATE 2/3a REVISED CANONICAL; GATE 3b READY TO BUILD)
+## Next session — START HERE (handoff 2026-06-10 PM — GATE 3b RAN: STACK DOES NOT CLEAR, p_fresh ISOLATED; BENCH LIVE; p_fresh-REGRESSION BRAINSTORM AWAITING OPERATOR SIGN-OFF)
+
+**Shipped this session (one close-session commit on top of `ec50adf`):**
+1. **GATE 3b EXECUTED per the locked plan** — driver `gates/build_gate3b.py` (lock chain in stage order: recorded-store book LOCF at midnight-ET snaps → provisional guard checkpoint [reproduced the review's 21/9, 22/12, 11/9, 7/7 exactly] → readiness pin selection [fail set {ANI,BAC,INT} at ALL 3 candidate pins → smallest pin **648979** locked; +POW operator-excluded] → true `snap_density` guard + ≥8 floor [T-4d exactly 8] + T-3d retention 22/25=88% → in-grid oracle → estimator pass) + `gates/db_facts.py::{critic_activity, fetch_reviews_full}` + `gates/_make_gate3b_nb.py` → **`notebooks/gate3b_deployable.ipynb`** + `tests/test_gate3b.py` (suite 651 → **662**). Caches: `_cache/gate3b_{cells,grid,a1_cache,activity,pools,readiness,meta}.csv`.
+2. **VERDICT (pre-registered rule): the shipped 0.2.0 stack DOES NOT CLEAR** — pooled (35 unique mkts/13 movies, T-1d excluded, 2000 shared resamples seed 7) Brier diff **+0.0015 [−0.0564, +0.0709]**, taker PnL **+2.4¢ [−12.6, +16.8]**. Decomposition (the prize): **λ fine — 93% of cells inside m ∈ [0.55, 3.0]**; **p_fresh fails — 33% in δ-band, 42% in the kill zone δ̂ > +0.05**, horizon sign-flip (T-3d mean +0.078/median +0.123 over-fresh; T-1d −0.063/−0.136 under); 2×2: p_fresh-in-band trades **+20.8¢ (75% win)** vs out-of-band **−10.7¢**. **In-grid oracle on the same 35 cells +31.4¢ [+22.0, +40.4]** → paired gap +29.0¢, capture **8%**; lagged≈pure; coverage 91.9% (3 `skip:features`, 0 `skip:lambda`, 0 `trimmed`). **Conservative −0.03 shade (post-verdict bench re-score, fenced): +11.8¢ [−0.3, +26.0]** — one line recovers ~⅓ of the ceiling, CI-lo a hair under 0. Full result: `plans/plan_gate3b.md` § "GATE 3b RESULT"; memory `project_gate3b_result`. Post-build adversarial Explore review: faithful, no blocking findings. Dev-catch worth knowing: the readiness check originally used `movie_coverage` ALL-TIME counts (post-close rows poisoned every label) — the pre-registered hard-assert on the expected fail set caught it before anything locked; fixed to `observed_state`.
+3. **`brainstorm/brainstorm_p_fresh_regression.md` WRITTEN (gitignored) — STOPPED for operator sign-off.** Candidate ladder C0 shade → C1 learned blend w(total, t_rem) → C2 small GLM (obs_rate, log1p_total, prior, t_rem, pool-consumed) → C3 + generosity-anchored subjective channel (§2.3 shrinkage folds in; subjective_score ~30% NaN → locked-row ablation); pre-registered decision rule: adopt iff bench PnL CI-lo > 0 AND point ≥ the shade's +11.8¢; eval = re-run the estimator pass on the LOCKED `gate3b_cells.csv` (the shade rows demonstrate the pattern); fits never see gate-cell outcomes (temporal LOO); ladder walked ONCE. Four open questions for the operator at the doc's end.
+
+**NEXT TASK (operator-gated):**
+1. **Get sign-off on `brainstorm/brainstorm_p_fresh_regression.md`** (answer its 4 open questions: ladder/stop rule; decision-rule strictness; training-row density; is C1-standalone shippable) → then PROTOCOL plan doc → build per the locked eval protocol. The bench makes each candidate cheap: p̂ swap + re-score, no grid/oracle rebuild.
+2. **Operator-side reminders (not agent tasks):** BACKLOG §1.9 scraper-repo backfill (ANI/POW + BAC/INT; acceptance = `validate_recorded` consistency table green → movies auto-re-admit to future gate re-runs); `kalshi-trading/src/series/KXRT/db.py:89` case fix; **push** (`git push origin main`).
+3. Standing: recorder cadence via ritual step 4 (seeded + fresh as of 2026-06-10).
+
+**Read at session start:** CLAUDE.md "Current Conventions" + status paragraphs (Gate-3b paragraph is new); `plans/plan_gate3b.md` — the "GATE 3b RESULT" section + "Scope resolution"; `brainstorm/brainstorm_p_fresh_regression.md` IN FULL (the sign-off object); memories `project_gate3b_result`, `project_gate2_result`, `reference_db_access`, `reference_notebook_execution`.
+
+**Conventions established this session:** the locked `gate3b_cells.csv` is the standing p_fresh/λ re-scoring bench (estimator-pass-only re-runs; nothing upstream rebuilds); the a1 cache carries TWO views (`estimated_timestamp` = noon-shifted estimator view, `est_raw` = oracle view — "each stack self-consistent"); readiness self-labels ALWAYS via `observed_state` (est ≤ close), never `movie_coverage`'s all-time counts; spread quantized to integer cents in the 3b grid (disclosed deviation from Gate-2's raw-float ≤).
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect **662** green); `.venv/bin/python -m gates.recorder --check`; `git log --oneline -3`; `.venv/bin/python -m gates.validate_recorded` (still exactly 3 coverage-class MISMATCHes — ANI/BAC/INT — until §1.9 lands); `gates/_cache/gate3b_cells.csv` exists (60 rows; rebuild = `python -m gates.build_gate3b`, needs DB sandbox-off, ~3min). Kalshi reads sandboxed OK; Neon + nbconvert need `dangerouslyDisableSandbox`.
+
+**Push status:** this session's close commit local on `main`; push per operator.
+
+---
+
+## Prior handoff (2026-06-10 AM) — SUPERSEDED 2026-06-10 PM (Gate 3b ran; verdict + bench landed)
 
 **Shipped this session (4 commits, 9339c64 → 8c6b886):**
 1. `9339c64` — **BACKLOG §1.7 recorder BUILT** (infra riff operator-signed first: `brainstorm/brainstorm_recorder_infra.md` — local-first, zero-secret Kalshi core, GHA = deferred phase-2): `gates/recorder.py` (incremental/idempotent → COMMITTED `gates/recorded/`; candles-before-ledger crash safety; per-market close epochs; Int64 columns; DB join = aggregates only with `db_joined` top-up; coverage watch; `n_aged_out` retention canary; `--check` staleness wired into ritual step 4 below) + `gates/slug_map.py` + `gates/validate_recorded.py` (rerunnable Phase-3 cross-check). **Seeded @ as_of 649484: 338 markets / 19 events / 1,210,586 candle rows (~9MB gz)** incl. 3 movies settled since the 06-07 cache; adversarially reviewed pre-commit (dup-ticker wedge / close-drift / Int64 drift fixed + regression-tested). Recon byproducts: **BACKLOG §1.8** (kalshi-trading git-tracks 24MB of 2024-26 KXRT website price histories — no bid/ask, calibration-class backfill) + coverage-watch's first reading (8 pre-embargo open events — informational per `b4e1b19`).

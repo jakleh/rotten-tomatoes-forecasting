@@ -148,6 +148,46 @@ def first_scrape(conn, slug, as_of_id):
         return cur.fetchone()[0]
 
 
+def critic_activity(conn, as_of_id) -> dict[str, int]:
+    """Full-universe per-critic distinct-movie counts (id <= as_of_id).
+
+    Train/serve parity for ``extract_lambda_features``'s ``low_activity_frac``: the
+    shipped 0.2.0 artifact was fit with activity derived from the FULL reviews dump
+    (no ``activity_lookup`` passed), so gate-time feature extraction must see the
+    full-universe counts too — a union-cache-derived count would truncate them and
+    inflate ``low_activity_frac`` (plan_gate3b review I5).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT reviewer_name, count(DISTINCT movie_slug) FROM reviews "
+            "WHERE id <= %s GROUP BY 1;",
+            (as_of_id,),
+        )
+        return {row[0]: int(row[1]) for row in cur.fetchall()}
+
+
+def fetch_reviews_full(conn, slugs: list[str], as_of_id: int) -> list[tuple]:
+    """Full review histories for ``slugs`` (id <= as_of_id), estimator-grade columns.
+
+    Returns raw rows (movie_slug, reviewer_name, publication_name, top_critic,
+    tomatometer_sentiment, subjective_score, estimated_timestamp, scrape_time,
+    timestamp_confidence). Sentiment is returned RAW — the caller owns the lowercase
+    normalization (one convention at ingest, per plan_gate3b input 1). ``scrape_time``
+    is a deliberate superset of the plan's column list: it costs nothing and enables
+    the lagged-oracle context row without a re-pull.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT movie_slug, reviewer_name, publication_name, top_critic, "
+            "       tomatometer_sentiment, subjective_score, estimated_timestamp, "
+            "       scrape_time, timestamp_confidence "
+            "FROM reviews WHERE movie_slug = ANY(%s) AND id <= %s "
+            "ORDER BY movie_slug, estimated_timestamp;",
+            (slugs, as_of_id),
+        )
+        return cur.fetchall()
+
+
 def snap_density(conn, slug, close_ts, snap_ts, as_of_id) -> dict:
     """Oracle-input density for one (movie, snap): the Gate-2 cohort-guard measurements.
 

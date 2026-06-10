@@ -46,7 +46,9 @@ The focused RT-modeling workspace for Rotten Tomatoes Tomatometer prediction mar
 
 **Integrity incident + revision (2026-06-10):** the recorder's settlement-consistency check exposed a sentiment-case switch (UPPERCASE rows scraped ≥ ~2026-06-02; raw table preserved, processing layer now case-insensitive — see the schema note) and coverage-thin movies (DB missing reviews RT counted: animal_farm_2025, power_ballad pre-05-01, backrooms, in_the_grey — backfill = BACKLOG §1.9, high priority). `notebooks/gate2_integrity_recheck.ipynb` first proved **zero sentiment-case drift** in all 134 original Gate-2 cell rows (no uppercase pre-close row touched any cell movie); the operator then promoted the readiness criterion into the canonical cell definition → Gate 2 + Gate 3a **re-executed ex-animal_farm** (the revised numbers above/below; every conclusion survives stronger). Gate 1/arena not re-run by recorded reasoning (plan addendum). animal_farm + power_ballad are `data_not_ready` for Gate 3b (effective cohort 17).
 
-**Gate-3a status (2026-06-09, re-swept 2026-06-10 on the data-ready cells): p_fresh is the binding input.** Error-tolerance sweep (`notebooks/gate3_tolerance.ipynb`, 36 markets/12 movies, anchor = the revised pooled +32.1¢): the PnL edge survives λ mis-estimation from **0.55× to 3×** at δ=0 (±170% random noise → 48/50 draws clear) and **δ ∈ [−0.10, 0]** of p_fresh error at m=1 — but δ=+0.05 kills the CI (random ±0.05 → 34/50; **over-estimating freshness remains the failure mode**; under-estimating is nearly free → the conservative-shade option strengthens). Shipped-0.2.0 proxies: Ridge λ error (m ∈ [0.62, 1.38] worst-snap) comfortably inside; `estimate_p_fresh` (~±0.03–0.05) in at −0.05, out at +0.05 → **the improvement priority inverts to p_fresh** (untouched since 0.1.x). Next: **Gate 3b** — run the actual `estimate_lambda`/`estimate_p_fresh` on a re-derived ET-midnight cell grid (A1-pool review cache; 17-movie data-ready cohort) → deployable-stack verdict vs the +32.1¢ oracle ceiling. See "GATE 3a RESULT — REVISED" in the plan.
+**Gate-3a status (2026-06-09, re-swept 2026-06-10 on the data-ready cells): p_fresh is the binding input.** Error-tolerance sweep (`notebooks/gate3_tolerance.ipynb`, 36 markets/12 movies, anchor = the revised pooled +32.1¢): the PnL edge survives λ mis-estimation from **0.55× to 3×** at δ=0 (±170% random noise → 48/50 draws clear) and **δ ∈ [−0.10, 0]** of p_fresh error at m=1 — but δ=+0.05 kills the CI (random ±0.05 → 34/50; **over-estimating freshness remains the failure mode**; under-estimating is nearly free → the conservative-shade option strengthens). Shipped-0.2.0 proxies: Ridge λ error (m ∈ [0.62, 1.38] worst-snap) comfortably inside; `estimate_p_fresh` (~±0.03–0.05) in at −0.05, out at +0.05 → **the improvement priority inverts to p_fresh** (untouched since 0.1.x). See "GATE 3a RESULT — REVISED" in the plan.
+
+**Gate-3b status (2026-06-10): the shipped 0.2.0 stack DOES NOT CLEAR; p_fresh isolated as THE failure input; ceiling intact.** The deployable-stack verdict ran on a re-derived **midnight-ET snap grid** (Option B; `gates/build_gate3b.py` lock chain: book LOCF → readiness/pin + guard + floor → in-grid oracle → estimator; pin 648979; 17-movie data-ready cohort; T-2d 12 mkts/10 movies, T-3d 23/13, T-4d 18/8, T-1d secondary; coverage 91.9%). Result (`notebooks/gate3b_deployable.ipynb`, pooled n=35/13 movies): **Brier diff +0.0015 [−0.0564, +0.0709], PnL +2.4¢ [−12.6, +16.8]** — neither clears. The per-cell decomposition turns 3a's prediction into a measurement: **λ fine (93% of cells in m ∈ [0.55, 3.0])** but **p_fresh out (33% in the δ-band; 42% in the kill zone δ̂ > +0.05**, horizon sign-flip: T-3d mean +0.078 / T-1d −0.063); trades with p_fresh in-band earn **+20.8¢ (75% win)** vs **−10.7¢** out-of-band. In-grid oracle on the same cells: **+31.4¢ [+22.0, +40.4]** → capture **8%**; a post-verdict −0.03 conservative shade recovers **+11.8¢ [−0.3, +26.0]** (bench re-score, fenced from the verdict). Per the locked fork the gap IS the improvement target → next build = **the p_fresh regression model** (brainstorm → operator sign-off); the locked `gate3b_cells.csv` is the standing re-scoring bench. Full result: `plans/plan_gate3b.md` § "GATE 3b RESULT".
 
 This project reads the same Neon PostgreSQL database the RT scraper populates (separate repo at `~/Desktop/rotten-tomatoes-analysis/`) but shares no code or config.
 
@@ -80,6 +82,8 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── build_density.py        # Driver: dense-cohort-guard density facts -> _cache/ (DB)
 │   ├── build_reviews_cache.py  # Driver: pinned per-review cohort rows -> _cache/ (DB)
 │   ├── probe_candle_open.py    # Driver: candle bid/ask open+close probe (LOCF validation)
+│   ├── build_gate3b.py         # Driver: Gate-3b lock chain (midnight-ET grid, readiness pin,
+│   │                           #   in-grid oracle, 0.2.0 estimator pass) -> _cache/gate3b_*.csv
 │   ├── recorder.py             # §1.7 weekly settled-market recorder -> recorded/ (idempotent; --check staleness)
 │   ├── validate_recorded.py    # Cross-check recorded/ vs _cache/ (the recorder's rerunnable Phase-3 audit)
 │   ├── slug_map.py             # Shared Kalshi-title -> DB-slug mapping (build_cohort + recorder)
@@ -91,9 +95,10 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── arena_map.ipynb              # Tradeable-edge arena map (2026-06-09)
 │   ├── gate2_density.ipynb / gate2_oracle.ipynb                    # Gate 2 STOP-gate + result (2026-06-09)
 │   ├── gate2_integrity_recheck.ipynb    # 2026-06-10 sentiment-case/coverage recheck (zero drift; ex-ANI stronger)
-│   └── gate3_tolerance.ipynb        # Gate 3a λ/p_fresh error-tolerance band (2026-06-09)
-├── tests/                           # 651 tests (99 package: edge/features/lambda_model/p_fresh/pool/package
-│                                    #  + 552 gate-support: oracle placement/invariants, compute_edge battery, recorder)
+│   ├── gate3_tolerance.ipynb        # Gate 3a λ/p_fresh error-tolerance band (2026-06-09)
+│   └── gate3b_deployable.ipynb      # Gate 3b deployable-stack verdict + m̂/δ̂ audit (2026-06-10)
+├── tests/                           # 662 tests (99 package: edge/features/lambda_model/p_fresh/pool/package
+│                                    #  + 563 gate-support: oracle placement/invariants, compute_edge battery, recorder, gate3b helpers)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
