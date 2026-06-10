@@ -9,8 +9,9 @@ Handoff prompts for starting new conversations on the rotten-tomatoes-forecastin
 Every prompt below is a task payload. Before acting on one, run the session-start ritual:
 1. **Foundation:** read `CLAUDE.md` "Current Conventions" (authoritative) + the relevant `BACKLOG.md` section + any findings doc the task names.
 2. **Plans:** read any referenced `plans/*.md` in full (gitignored, local).
-3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 628 green as of 2026-06-09) before touching code.
-4. **Then** start the task.
+3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 648 green as of 2026-06-10) before touching code.
+4. **Recorder staleness:** `.venv/bin/python -m gates.recorder --check` — exit 1 means run `python -m gates.recorder` (sandbox-off for the DB join; `--no-db` works sandboxed and tops up later). The session ritual IS the §1.7 recorder's scheduler; `gates/recorded/` is the committed system of record.
+5. **Then** start the task.
 
 A good NEW handoff prompt gives: the task in one line; the foundation docs to read; a prerequisite/STOP check if the task is data-gated; concrete numbered steps; an explicit decision rule + out-of-scope list; and the deliverable.
 

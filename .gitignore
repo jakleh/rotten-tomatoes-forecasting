@@ -16,3 +16,4 @@ rt-rules-contract.pdf
 build/
 .claude/
 gates/_cache/
+gates/recorded/**/*.tmp

@@ -78,15 +78,19 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── build_density.py        # Driver: dense-cohort-guard density facts -> _cache/ (DB)
 │   ├── build_reviews_cache.py  # Driver: pinned per-review cohort rows -> _cache/ (DB)
 │   ├── probe_candle_open.py    # Driver: candle bid/ask open+close probe (LOCF validation)
+│   ├── recorder.py             # §1.7 weekly settled-market recorder -> recorded/ (idempotent; --check staleness)
+│   ├── validate_recorded.py    # Cross-check recorded/ vs _cache/ (the recorder's rerunnable Phase-3 audit)
+│   ├── slug_map.py             # Shared Kalshi-title -> DB-slug mapping (build_cohort + recorder)
 │   ├── _make_*.py              # nbformat codegen for each analysis notebook
-│   └── _cache/                 # Cached CSVs/PNGs incl. arena_spans.csv, gate2_cells.csv (gitignored)
+│   ├── _cache/                 # Cached CSVs/PNGs incl. arena_spans.csv, gate2_cells.csv (gitignored)
+│   └── recorded/               # COMMITTED system of record: settled-market ledger + per-event 1-min candles (.csv.gz)
 ├── notebooks/                       # Gate analyses (cache-only, sandbox-safe; the citable numbers)
 │   ├── gate1_calibration.ipynb / gate1b_incremental_info.ipynb      # Gate 1 (2026-06-07)
 │   ├── arena_map.ipynb              # Tradeable-edge arena map (2026-06-09)
 │   ├── gate2_density.ipynb / gate2_oracle.ipynb                    # Gate 2 STOP-gate + result (2026-06-09)
 │   └── gate3_tolerance.ipynb        # Gate 3a λ/p_fresh error-tolerance band (2026-06-09)
-├── tests/                           # 628 tests (98 package: edge/features/lambda_model/p_fresh/pool/package
-│                                    #  + 530 gate-support: oracle placement/invariants, compute_edge battery)
+├── tests/                           # 648 tests (98 package: edge/features/lambda_model/p_fresh/pool/package
+│                                    #  + 550 gate-support: oracle placement/invariants, compute_edge battery, recorder)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)

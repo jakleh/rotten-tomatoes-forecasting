@@ -13,35 +13,16 @@ Outputs:
 """
 from __future__ import annotations
 
-import difflib
 import os
-import re
 from datetime import datetime
 
 import pandas as pd
 
 from gates import db_facts as dbf
 from gates import kalshi_data as kd
+from gates.slug_map import NAME_RE, map_slug, norm
 
 CACHE = os.path.join(os.path.dirname(__file__), "_cache")
-_NAME_RE = re.compile(r"If (.+?) has a Tomatometer score", re.I)
-
-
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
-
-
-def _map_slug(name: str | None, db_norm: dict[str, str]) -> str | None:
-    if not name:
-        return None
-    key = _norm(name)
-    if key in db_norm:
-        return db_norm[key]
-    starts = [s for k, s in db_norm.items() if k.startswith(key) or key.startswith(k)]
-    if len(starts) == 1:
-        return starts[0]
-    close = difflib.get_close_matches(key, list(db_norm), n=1, cutoff=0.85)
-    return db_norm[close[0]] if close else None
 
 
 def _dt(iso: str) -> datetime:
@@ -56,17 +37,17 @@ def build(status: str = "settled", chunk_minutes: int = 2880) -> tuple[pd.DataFr
     conn = dbf.connect()
     try:
         n = dbf.as_of_id(conn)
-        db_norm = {_norm(s): s for s in dbf.movie_review_counts(conn, n)}
+        db_norm = {norm(s): s for s in dbf.movie_review_counts(conn, n)}
         # event -> movie name -> slug -> close_ts
         ev = {}
         for m in mkts:
             et = m["event_ticker"]
             if et not in ev:
-                mt = _NAME_RE.search(m.get("rules_primary") or "")
+                mt = NAME_RE.search(m.get("rules_primary") or "")
                 ev[et] = {"name": mt.group(1).strip() if mt else None,
                           "close": _dt(m["close_time"])}
         for et, info in ev.items():
-            info["slug"] = _map_slug(info["name"], db_norm)
+            info["slug"] = map_slug(info["name"], db_norm)
         # self-labeled 10am score per movie (one query per slug)
         score = {}
         for et, info in ev.items():
