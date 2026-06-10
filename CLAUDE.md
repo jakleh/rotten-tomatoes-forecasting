@@ -92,8 +92,8 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── gate2_density.ipynb / gate2_oracle.ipynb                    # Gate 2 STOP-gate + result (2026-06-09)
 │   ├── gate2_integrity_recheck.ipynb    # 2026-06-10 sentiment-case/coverage recheck (zero drift; ex-ANI stronger)
 │   └── gate3_tolerance.ipynb        # Gate 3a λ/p_fresh error-tolerance band (2026-06-09)
-├── tests/                           # 648 tests (98 package: edge/features/lambda_model/p_fresh/pool/package
-│                                    #  + 550 gate-support: oracle placement/invariants, compute_edge battery, recorder)
+├── tests/                           # 651 tests (99 package: edge/features/lambda_model/p_fresh/pool/package
+│                                    #  + 552 gate-support: oracle placement/invariants, compute_edge battery, recorder)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
