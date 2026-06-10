@@ -28,16 +28,17 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 **GATE-2 RESULT — STRONG PASS (directional; read `project_gate2_result` + the plan's "GATE 2 RESULT" section IN FULL):** oracle λ/p_fresh → `compute_edge` beats the state-at-snap book on **Brier AND spread-crossing taker-fee PnL**: T-3d +0.0775 Brier diff [+0.0237, +0.1271] / +24.1¢ [+11.9, +34.4] (83% win, 23 trades/13 movies); T-4d clears both; pooled +0.0966 / +27.5¢; robust ex-billie; **both trade sides win** (22 NO +20.3¢ / 14 YES +38.8¢); **lagged ≈ pure** (scrape cadence not binding); encompassing LOMO Δlogloss +0.25 at 3d/4d (mirror of Gate-1b's ≈0) → **the market prices the current state but not the flow**. Adversarially verified by independent recompute. Caveats: ≤13 movies/snap → directional; the oracle is the architecture CEILING, not a deployable edge.
 
-**NEXT TASK — GATE 3 (error tolerance: is the shipped estimator inside the edge-preserving band?):**
-1. On the same Gate-2 cells (`gates/_cache/gate2_cells.csv`), sweep multiplicative/additive perturbations of (λ, p_fresh) around the oracle values → map the region where Brier-vs-market and PnL stay positive (per snap; cluster-boot by movie; same fee/spread model).
-2. Overlay the **shipped 0.2.0 Ridge LOO error distribution** (BACKLOG §1.1: e.g. T-3d MAE 9.96 on phase-1 counts — convert to λ-relative error on these cells' scales) and `estimate_p_fresh` calibration error (§1.4) → verdict: inside/outside the band, and by how much.
-3. If inside → scope the **live-shadow test** (paper-trade the 0.2.0 stack on new settling markets via the §1.7 recorder); if outside → the gap IS the model-improvement target (sized, not vibes).
-4. **BACKLOG §1.7 recorder is now URGENT** (the API retention window rolls; every settling week un-snapshotted is cohort lost — and Gate 3's conclusions want out-of-sample confirmation on fresh movies).
-5. Park: form-diagnostic/PIT (pass made it moot); contested-Yes-tilt hint (tercile signature logged as exploratory).
+**GATE 3a DONE same session (`notebooks/gate3_tolerance.ipynb`; plan § "GATE 3a RESULT"):** λ-error tolerance is HUGE (PnL CI>0 for m ∈ [0.55, 3.0]; ±170% random λ noise survives 44/50), **p_fresh tolerance is TIGHT and binding** (PnL band δ ∈ [−0.05, 0]; random ±0.05 clears only 26/50; over-estimating worse than under-). Shipped-0.2.0 proxies: Ridge λ error comfortably inside; `estimate_p_fresh` (~±0.03–0.05) right AT the band edge. **Strategic inversion: the edge hinges on p_fresh, which nobody has touched since 0.1.x — not λ, where all the effort went.**
+
+**NEXT TASK — GATE 3b (run the REAL 0.2.0 estimator on the Gate-2 cells) + p_fresh focus:**
+1. **Gate 3b:** build the A1-pool review cache (the 20 most recent resolved movies before each target close — new `db_facts`/driver pull, as_of-pinned) + align the **ET-midnight snap convention** (CLAUDE.md "Current Conventions") vs the gate cells' close−24N snaps (compare only P(Yes), per the plan's windowing note). Run `extract_lambda_features` → `estimate_lambda` (shipped artifact) + `estimate_p_fresh` per cell → same Brier/PnL machinery vs the state-at-snap book → **the deployable-stack verdict** (the oracle ceiling is +27.5¢ pooled; how much survives real inputs?).
+2. **p_fresh audit first-class** (§1.4, now priority): per-cell `estimate_p_fresh` error on these 16 movies vs the oracle p_fresh — distribution, bias sign (the band is asymmetric), and whether §2.2 time-varying / §2.3 hierarchical variants close the gap.
+3. **BACKLOG §1.7 recorder — URGENT** (retention window rolls; Gate-3b conclusions want out-of-sample confirmation on fresh settling movies).
+4. Park: form-diagnostic/PIT (Gate-2 pass made it moot); contested-Yes-tilt hint (logged exploratory).
 
 **Conventions (all still apply):** `db_facts` as_of_id pinning (648979 this session); one-obs-per-market + staleness + spread stratification; notebooks = citable numbers (`/audit-numbers`); nbconvert needs `dangerouslyDisableSandbox` (kernel sockets); Kalshi API reachable sandboxed, **Neon DB needs sandbox-off** (DNS blocked in-sandbox — see session note); axis-language discipline (oracle-conditioned = PRIZE, observable-conditioned = inefficiency).
 
-**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect **628** green); `git log --oneline -3`; confirm `gates/_cache/{cohort_markets,candles,gate1b_input,arena_spans,density,reviews_cohort,gate2_cells}.csv` exist.
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect **628** green); `git log --oneline -3`; confirm `gates/_cache/{cohort_markets,candles,gate1b_input,arena_spans,density,reviews_cohort,gate2_cells}.csv` exist (gate3 band artifacts: `gate3_band.png` + `notebooks/gate3_tolerance.ipynb`).
 
 **Push status:** committed at this session close; push per operator (`/ship` or `git push origin main`).
 
