@@ -9,7 +9,7 @@ Handoff prompts for starting new conversations on the rotten-tomatoes-forecastin
 Every prompt below is a task payload. Before acting on one, run the session-start ritual:
 1. **Foundation:** read `CLAUDE.md` "Current Conventions" (authoritative) + the relevant `BACKLOG.md` section + any findings doc the task names.
 2. **Plans:** read any referenced `plans/*.md` in full (gitignored, local).
-3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 662 green as of 2026-06-10 PM) before touching code.
+3. **Sanity-check:** `uv sync`, then `.venv/bin/python -m pytest tests/ -q` (expect 699 green as of 2026-06-10 late PM) before touching code.
 4. **Recorder staleness:** `.venv/bin/python -m gates.recorder --check` — exit 1 means run `python -m gates.recorder` (sandbox-off for the DB join; `--no-db` works sandboxed and tops up later). The session ritual IS the §1.7 recorder's scheduler; `gates/recorded/` is the committed system of record.
 5. **Then** start the task.
 
@@ -23,7 +23,30 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
-## Next session — START HERE (handoff 2026-06-10 PM — GATE 3b RAN: STACK DOES NOT CLEAR, p_fresh ISOLATED; BENCH LIVE; p_fresh-REGRESSION BRAINSTORM AWAITING OPERATOR SIGN-OFF)
+## Next session — START HERE (handoff 2026-06-10 late PM — p_fresh REGRESSION PROGRAM RAN END-TO-END: BATTERY DECISIVE, BENCH NO WINNER (BAR-INVARIANT); SHADE-AS-INTERIM = THE OPEN OPERATOR DECISION)
+
+**Shipped this session (after `d5f60f1` Gate 3b; operator: "go ahead" through results, weigh-in at the readout):**
+1. **Brainstorm v3 signed** (battery decides BUILT / bench rule decides SHIPS / recorder tripwire decides LIVE) → **`plans/plan_p_fresh_regression.md` v2** (pre-build Explore review: 3 BLOCKING spec holes fixed pre-code — v1's C1 rung was hull-bound dead [oracle outside the [obs_rate, prior] interval in 35/60 bench cells, BOTH ingredients over-fresh at T-3d +0.078/+0.062 → every candidate carries an additive calibration escape]; the cache-only training universe was the bench wearing a hat → full-universe pull; decision-protocol contradictions → paired rule + fallback + tripwire).
+2. **BUILT + RAN:** `gates/pfresh_lib.py` (+37 tests, suite 662 → **699**) + `gates/build_pfresh_training.py` (pin **653572**: 26,188 rows / 160 slugs → **135 eligible movies / 529 snap-rows**) + `notebooks/pfresh_battery.ipynb` + `notebooks/pfresh_bench.ipynb` (+ codegens). **BATTERY:** remaining-critic priors ≈ NO ranking signal (Spearman −0.05 vs obs_rate +0.874; P3 marginally > P2); **intensity channel DEAD** (increment −0.0002; score→fresh curves are STEP FUNCTIONS — 4.7% of scored mass in p ∈ [0.2, 0.8]; anchors transfer +0.167 but there's no gradient) → **C3 never built, kill measured**; **state-dependence huge** (visible-score coef +0.99 beyond critic FE, OOS +0.1975); bias is **behavior not composition** (oracle-composition keeps +0.054/+0.074); d-row/shrink-k immaterial. **BENCH (locked paired rule, 35 cells, temporal per-close fits):** C1′ +7.8¢ [−5.2, +23.0] (paired vs shade −4.1¢ [−9.1, +0.5]), C2′ +10.0¢ [−4.4, +25.2] (paired −1.9¢ [−7.2, +1.9]) vs the −0.03 shade bar +11.8¢ [−0.3, +26.0] → **NO WINNER → ship nothing** (pre-registered fallback). Both candidates CRUSH the shipped +2.4¢ and fix δ̂ (kill-zone 42% → 27/30%, T-3d hump +0.078 → +0.024/+0.036) — the calibration works, a constant just matches it at n=35.
+3. **Post-build Explore review — verdict "trustworthy and over-determined (BAR-INVARIANT)"** (independent full re-execution, every number exact; s*≈−0.045 bar counterfactual +11.6¢ [−0.6, +25.0] — both candidates fail CI-lo>0 under ANY bar). Its attribution catch is folded in: **per-snap "T-3d strength (+25.1¢*)/T-2d crater (−22..−28¢)" are the BAR's numbers too** (shade T-3d +25.1¢*, T-2d −28.4¢; 11/12 T-2d trades identical); candidates' only paired edge = T-2d +6.0¢ [+0.0, +21.6] (n=12). Also folded: [F24] print (earliest-close fit ≈98% April-backfill rows — deploy-parity, disclosed), shade-per-snap rows, reconstruction assert (1.1e-16), oos-only rows, per-snap T2 deviances, shrink-k/raw-clip sensitivities (12h-grid struck → next cycle), floor→skip-and-disclose via the tested `pl.temporal_rows`. Dev-catches on record: a ticker-only merge fanned the 35-cell verdict set to 56 rows on first execution (caught by a point estimate outside its own CI; fixed with len==35 + no-NaN asserts).
+
+**NEXT TASK (operator decision + then mechanical):**
+1. **OPERATOR DECISION at the readout:** ship the **shade as a flagged interim** `estimate_p_fresh` change (−0.03 measured +11.8¢ [−0.3, +26.0]; training data independently says s* ≈ −0.04; it IS the current frontier and nearly clears) — or **wait** for the recorder-growth re-run. Either way: the **K≈8 tripwire** governs anything going live, and the re-run (battery + bench re-score on the grown cohort) is one estimator pass over the standing machinery (`pfresh_training_*.csv`, `pfresh_battery_decisions.csv`, the locked bench).
+2. If shade ships: small PROTOCOL plan for the library change (constant + provenance comment + tests; the s* refit cadence question rides along).
+3. Standing: recorder ritual (step 4); BACKLOG §1.9 backfill + `kalshi-trading/src/series/KXRT/db.py:89` fix (operator-side); next bench re-lock (e.g., +8 movies) restarts ladder bookkeeping per the frozen-bench policy.
+4. Next-cycle research leads (measured, not vibes): T5's state signal (visible-score path) as a remaining-rate model input; T1's behavior verdict (late-review rotten-skew) as the structural target; intensity stays dead unless a finer-grained score source appears.
+
+**Read at session start:** CLAUDE.md "Current Conventions" + the Gate-3b and p_fresh-program status paragraphs; `plans/plan_p_fresh_regression.md` — "RESULT" + "Review log"; memories `project_pfresh_regression_result`, `project_gate3b_result`, `reference_db_access`, `reference_notebook_execution`.
+
+**Conventions established this session:** the battery/bench/tripwire split (BUILT/SHIPS/LIVE) is the standing evaluation pattern for estimator work; per-snap candidate reads always ride WITH the bar on the same cells/draws (attribution discipline); paired-on-shared-draws is the comparison form; bar-invariance checks before "no winner" readouts; pre-registered hard-asserts on expected outcomes catch implementation bugs (twice this session).
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect **699** green); `.venv/bin/python -m gates.recorder --check`; `git log --oneline -3`; `gates/_cache/pfresh_{training_rows,training_features,battery_decisions}.csv` + `gate3b_cells.csv` exist (training rebuild: `python -m gates.build_pfresh_training`, DB sandbox-off, ~2min; notebooks re-execute cache-only). Kalshi sandboxed OK; Neon + nbconvert need `dangerouslyDisableSandbox`.
+
+**Push status:** Gate-3b commit `d5f60f1` pushed; this session's p_fresh-program commit local on `main` — push per operator.
+
+---
+
+## Prior handoff (2026-06-10 PM) — SUPERSEDED same day (p_fresh program ran; results at the readout)
 
 **Shipped this session (one close-session commit on top of `ec50adf`):**
 1. **GATE 3b EXECUTED per the locked plan** — driver `gates/build_gate3b.py` (lock chain in stage order: recorded-store book LOCF at midnight-ET snaps → provisional guard checkpoint [reproduced the review's 21/9, 22/12, 11/9, 7/7 exactly] → readiness pin selection [fail set {ANI,BAC,INT} at ALL 3 candidate pins → smallest pin **648979** locked; +POW operator-excluded] → true `snap_density` guard + ≥8 floor [T-4d exactly 8] + T-3d retention 22/25=88% → in-grid oracle → estimator pass) + `gates/db_facts.py::{critic_activity, fetch_reviews_full}` + `gates/_make_gate3b_nb.py` → **`notebooks/gate3b_deployable.ipynb`** + `tests/test_gate3b.py` (suite 651 → **662**). Caches: `_cache/gate3b_{cells,grid,a1_cache,activity,pools,readiness,meta}.csv`.
