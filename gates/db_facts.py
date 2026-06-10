@@ -127,3 +127,66 @@ def observed_state(conn, slug, cutoff_ts, as_of_id):
             (slug, as_of_id, cutoff_ts))
         fresh, total = cur.fetchone()
         return int(fresh), int(total)
+
+
+def first_scrape(conn, slug, as_of_id):
+    """Earliest ``scrape_time`` for the movie (id <= as_of_id), or None.
+
+    Live-tracked-through-snap proxy: a movie first scraped BEFORE a snap was already in
+    the scraper's tracking set at that snap (tracking is add-only; assumption flagged in
+    the plan's cohort-guard section).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT min(scrape_time) FROM reviews WHERE movie_slug=%s AND id<=%s",
+            (slug, as_of_id))
+        return cur.fetchone()[0]
+
+
+def snap_density(conn, slug, close_ts, snap_ts, as_of_id) -> dict:
+    """Oracle-input density for one (movie, snap): the Gate-2 cohort-guard measurements.
+
+    All filters are publication-time (``estimated_timestamp``), pinned by id <= as_of_id.
+    Returns, for the remaining window ``(snap_ts, close_ts]``: total / fresh / m+h / d
+    counts and scrape-lag quantiles (seconds, ``scrape_time − estimated_timestamp``,
+    m/h rows only — d-row "lag" is granularity artifact, not scrape latency); plus the
+    boundary-ambiguity count ``n_d_near_snap`` (d-confidence reviews with est_ts within
+    ±1 day of the snap — the crowd-forward placement rule moves exactly these across the
+    observed/remaining boundary).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+              count(*) FILTER (WHERE estimated_timestamp >  %(t)s
+                                 AND estimated_timestamp <= %(c)s)            AS n_remaining,
+              count(*) FILTER (WHERE estimated_timestamp >  %(t)s
+                                 AND estimated_timestamp <= %(c)s
+                                 AND tomatometer_sentiment = 'positive')      AS n_remaining_fresh,
+              count(*) FILTER (WHERE estimated_timestamp >  %(t)s
+                                 AND estimated_timestamp <= %(c)s
+                                 AND timestamp_confidence IN ('m','h'))       AS n_remaining_mh,
+              count(*) FILTER (WHERE estimated_timestamp >  %(t)s
+                                 AND estimated_timestamp <= %(c)s
+                                 AND timestamp_confidence = 'd')              AS n_remaining_d,
+              count(*) FILTER (WHERE estimated_timestamp >  %(t)s - interval '1 day'
+                                 AND estimated_timestamp <= %(t)s + interval '1 day'
+                                 AND timestamp_confidence = 'd')              AS n_d_near_snap,
+              percentile_cont(0.5) WITHIN GROUP (
+                ORDER BY extract(epoch FROM (scrape_time - estimated_timestamp)))
+                FILTER (WHERE estimated_timestamp >  %(t)s
+                          AND estimated_timestamp <= %(c)s
+                          AND timestamp_confidence IN ('m','h'))              AS lag_p50_s,
+              percentile_cont(0.9) WITHIN GROUP (
+                ORDER BY extract(epoch FROM (scrape_time - estimated_timestamp)))
+                FILTER (WHERE estimated_timestamp >  %(t)s
+                          AND estimated_timestamp <= %(c)s
+                          AND timestamp_confidence IN ('m','h'))              AS lag_p90_s
+            FROM reviews
+            WHERE movie_slug = %(slug)s AND id <= %(n)s;
+            """,
+            {"t": snap_ts, "c": close_ts, "slug": slug, "n": as_of_id},
+        )
+        cols = ["n_remaining", "n_remaining_fresh", "n_remaining_mh", "n_remaining_d",
+                "n_d_near_snap", "lag_p50_s", "lag_p90_s"]
+        return dict(zip(cols, cur.fetchone()))

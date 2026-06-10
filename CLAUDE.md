@@ -40,7 +40,9 @@ The focused RT-modeling workspace for Rotten Tomatoes Tomatometer prediction mar
 
 **Gate-1 status (2026-06-07):** Gate 1 ran directionally on the 16-movie settled KXRT cohort (code in the new `gates/`; analyses in `notebooks/gate1_calibration.ipynb` + `gate1b_incremental_info.ipynb`). Result: the market **prices the observed review state** (no current-state edge) and is **stale/thin** — most order books go one-sided ~4 days before close, and contested markets have no live two-sided quote near close — so **tradeability, not forecasting, is the binding constraint**. Full result: memory `project_gate1_findings` + `plans/plan_gate_1_2_calibration.md`.
 
-**Arena-map status (2026-06-09):** the tradeable-edge-surface check ran (`notebooks/arena_map.ipynb`): Kalshi candles are activity-gated but the order book persists through silent gaps (probe: P(state identical across gap)=1.00000) → per-minute LOCF book reconstruction is valid. The contested∧tight-spread arena **exists and is early** — at T-3d all 16/16 movies have a contested ≤10¢-spread book with median 28% of reviews still to come; near-close (≤12h) it is ~empty. **The tradeable window is T-2d..T-5d (center T-3d); Gate 2 is unblocked** there, benchmarked against the state-at-snap book (spread-crossing entry) using `gates/_cache/arena_spans.csv`. See the "Arena map result (2026-06-09)" section of `plans/plan_gate_1_2_calibration.md` + memory `project_arena_map`.
+**Arena-map status (2026-06-09):** the tradeable-edge-surface check ran (`notebooks/arena_map.ipynb`): Kalshi candles are activity-gated but the order book persists through silent gaps (probe: P(state identical across gap)=1.00000) → per-minute LOCF book reconstruction is valid. The contested∧tight-spread arena **exists and is early** — at T-3d all 16/16 movies have a contested ≤10¢-spread book with median 28% of reviews still to come; near-close (≤12h) it is ~empty. **The tradeable window is T-2d..T-5d (center T-3d)**. See the "Arena map result (2026-06-09)" section of `plans/plan_gate_1_2_calibration.md` + memory `project_arena_map`.
+
+**Gate-2 status (2026-06-09): STRONG PASS (directional) → Gate 3.** After the pre-registered dense-cohort STOP-gate (`notebooks/gate2_density.ipynb`: T-2d/3d/4d runnable with 13/13/11 oracle-clean movies; T-5d underpowered), the oracle ran (`notebooks/gate2_oracle.ipynb`, as_of_id=648979): realized λ/p_fresh through `compute_edge` beats the state-at-snap book on **both Brier and spread-crossing PnL net of taker fees** — T-3d Brier diff +0.0775 [+0.0237, +0.1271], PnL +24.1¢/contract [+11.9, +34.4], 83% win; robust ex-billie; wins on BOTH trade sides; lagged(scrape-time) ≈ pure(publication-time) oracle, so scraper cadence isn't binding. The market prices the current review state (Gate 1b) but **not the flow** (encompassing Δlogloss +0.25 at T-3d/4d). The architecture captures the prize → **next: Gate 3** (how much λ/p_fresh estimation error keeps the edge; compare the Ridge LOO error band). Oracle math: `gates/oracle.py`, test-validated (suite now 628). Full result + caveats: the "GATE 2 RESULT" section of `plans/plan_gate_1_2_calibration.md` + memory `project_gate2_result`.
 
 This project reads the same Neon PostgreSQL database the RT scraper populates (separate repo at `~/Desktop/rotten-tomatoes-analysis/`) but shares no code or config.
 
@@ -65,18 +67,23 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │       └── default_regressor.json   # Default LambdaRegressor JSON (~23KB)
 ├── scripts/
 │   └── fit_default_regressor.py     # Refit script for the shipped artifact
-├── gates/                           # Gate-calibration data layer (NOT part of the shipped package)
+├── gates/                           # Gate-calibration support layer (NOT part of the shipped package)
 │   ├── kalshi_data.py          # Public Kalshi/KXRT fetcher (no auth; stdlib urllib)
 │   ├── db_facts.py             # Read-only as_of_id-pinned reviews queries
+│   ├── oracle.py               # Gate-2 oracle λ/p_fresh decomposition (placement rules, two boundaries)
 │   ├── build_cohort.py         # Driver: settled cohort + 1-min candles -> _cache/ (network)
 │   ├── build_snap_state.py     # Driver: per-(market,snap) mid + observed state -> _cache/ (DB)
+│   ├── build_density.py        # Driver: dense-cohort-guard density facts -> _cache/ (DB)
+│   ├── build_reviews_cache.py  # Driver: pinned per-review cohort rows -> _cache/ (DB)
 │   ├── probe_candle_open.py    # Driver: candle bid/ask open+close probe (LOCF validation)
-│   ├── _make_gate1_nb.py / _make_gate1b_nb.py / _make_arena_nb.py   # nbformat notebook codegen
-│   └── _cache/                 # Cached CSVs/PNGs incl. arena_spans.csv (gitignored)
+│   ├── _make_*.py              # nbformat codegen for each analysis notebook
+│   └── _cache/                 # Cached CSVs/PNGs incl. arena_spans.csv, gate2_cells.csv (gitignored)
 ├── notebooks/                       # Gate analyses (cache-only, sandbox-safe; the citable numbers)
 │   ├── gate1_calibration.ipynb / gate1b_incremental_info.ipynb      # Gate 1 (2026-06-07)
-│   └── arena_map.ipynb              # Tradeable-edge arena map (2026-06-09)
-├── tests/                           # 98 tests (edge / features / lambda_model / p_fresh / pool / package)
+│   ├── arena_map.ipynb              # Tradeable-edge arena map (2026-06-09)
+│   └── gate2_density.ipynb / gate2_oracle.ipynb                    # Gate 2 STOP-gate + result (2026-06-09)
+├── tests/                           # 628 tests (98 package: edge/features/lambda_model/p_fresh/pool/package
+│                                    #  + 530 gate-support: oracle placement/invariants, compute_edge battery)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)

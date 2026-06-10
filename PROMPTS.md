@@ -22,7 +22,28 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
-## Next session — START HERE (handoff 2026-06-09)
+## Next session — START HERE (handoff 2026-06-09 PM — GATE 2 PASSED)
+
+**Shipped this session (one session, two phases):** (1) the **arena map** (see the superseded AM handoff below — arena = T-2d..T-5d, LOCF book reconstruction validated) and (2) **GATE 2, end-to-end**: pre-registered dense-cohort STOP-gate (`gates/build_density.py` + `notebooks/gate2_density.ipynb` — T-2d/3d/4d runnable at 13/13/11 oracle-clean movies, T-5d underpowered; zero 's'-rows; power sim honest-fixed), the oracle module (`gates/oracle.py`: m/h at est+1min, d crowd-forward to next UTC midnight, pure vs scrape-lagged boundaries) test-validated via `tests/test_oracle.py` + `tests/test_edge_battery.py` (500-case grid vs an exact-integer reference; **suite 98 → 628**), pinned review cache (`gates/build_reviews_cache.py`, as_of_id=648979), and the Gate-2 run (`gates/_make_gate2_nb.py` → `notebooks/gate2_oracle.ipynb`).
+
+**GATE-2 RESULT — STRONG PASS (directional; read `project_gate2_result` + the plan's "GATE 2 RESULT" section IN FULL):** oracle λ/p_fresh → `compute_edge` beats the state-at-snap book on **Brier AND spread-crossing taker-fee PnL**: T-3d +0.0775 Brier diff [+0.0237, +0.1271] / +24.1¢ [+11.9, +34.4] (83% win, 23 trades/13 movies); T-4d clears both; pooled +0.0966 / +27.5¢; robust ex-billie; **both trade sides win** (22 NO +20.3¢ / 14 YES +38.8¢); **lagged ≈ pure** (scrape cadence not binding); encompassing LOMO Δlogloss +0.25 at 3d/4d (mirror of Gate-1b's ≈0) → **the market prices the current state but not the flow**. Adversarially verified by independent recompute. Caveats: ≤13 movies/snap → directional; the oracle is the architecture CEILING, not a deployable edge.
+
+**NEXT TASK — GATE 3 (error tolerance: is the shipped estimator inside the edge-preserving band?):**
+1. On the same Gate-2 cells (`gates/_cache/gate2_cells.csv`), sweep multiplicative/additive perturbations of (λ, p_fresh) around the oracle values → map the region where Brier-vs-market and PnL stay positive (per snap; cluster-boot by movie; same fee/spread model).
+2. Overlay the **shipped 0.2.0 Ridge LOO error distribution** (BACKLOG §1.1: e.g. T-3d MAE 9.96 on phase-1 counts — convert to λ-relative error on these cells' scales) and `estimate_p_fresh` calibration error (§1.4) → verdict: inside/outside the band, and by how much.
+3. If inside → scope the **live-shadow test** (paper-trade the 0.2.0 stack on new settling markets via the §1.7 recorder); if outside → the gap IS the model-improvement target (sized, not vibes).
+4. **BACKLOG §1.7 recorder is now URGENT** (the API retention window rolls; every settling week un-snapshotted is cohort lost — and Gate 3's conclusions want out-of-sample confirmation on fresh movies).
+5. Park: form-diagnostic/PIT (pass made it moot); contested-Yes-tilt hint (tercile signature logged as exploratory).
+
+**Conventions (all still apply):** `db_facts` as_of_id pinning (648979 this session); one-obs-per-market + staleness + spread stratification; notebooks = citable numbers (`/audit-numbers`); nbconvert needs `dangerouslyDisableSandbox` (kernel sockets); Kalshi API reachable sandboxed, **Neon DB needs sandbox-off** (DNS blocked in-sandbox — see session note); axis-language discipline (oracle-conditioned = PRIZE, observable-conditioned = inefficiency).
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect **628** green); `git log --oneline -3`; confirm `gates/_cache/{cohort_markets,candles,gate1b_input,arena_spans,density,reviews_cohort,gate2_cells}.csv` exist.
+
+**Push status:** committed at this session close; push per operator (`/ship` or `git push origin main`).
+
+---
+
+## Prior handoff (2026-06-09 AM) — SUPERSEDED same day (arena map done; Gate 2 RAN and PASSED)
 
 **Shipped this session:** the **tradeable-edge arena map** (the Gate-1 handoff's binding-constraint gate). New: `gates/probe_candle_open.py` (Kalshi candle bid/ask open+close probe), `gates/_make_arena_nb.py` (codegen), `notebooks/arena_map.ipynb` (executed; the citable numbers), cache artifacts `gates/_cache/{candle_open_probe.csv, arena_spans.csv, arena_occupancy.png, arena_death_vs_formation.png}` (gitignored). Docs: "Arena map result (2026-06-09)" section in `plans/plan_gate_1_2_calibration.md` (gitignored), CLAUDE.md Gate-status update, BACKLOG 1.5 update, memory `project_arena_map` (+ `reference_kalshi_access` candle-semantics fix).
 
