@@ -33,7 +33,7 @@ T-1d      3.87          2.22        +43%       +2.73       -0.03
 
 ### 1.2 Test suite for 0.2.0 — DONE
 
-98 tests cover the new surface per `plans/plan_ridge_integration.md` §8.1:
+98 tests covered the 0.2.0 package surface at ship (2026-04-19); gate-support tests added 2026-06-09 (`tests/test_oracle.py` + `tests/test_edge_battery.py`, +530) bring the suite to **628**. The original 98 per `plans/plan_ridge_integration.md` §8.1:
 
 - `tests/test_package.py` — public API re-exports + removal of KDE symbols.
 - `tests/test_edge.py` — unchanged; compute_edge math.
