@@ -23,13 +23,13 @@ OPEN_T = "2026-05-20T00:00:00Z"
 
 
 def mkt(ticker: str, event: str, *, name: str | None = "Backrooms", close: str = CLOSE,
-        strike: int = 80) -> dict:
+        strike: int = 80, result: str = "no") -> dict:
     return {
         "ticker": ticker, "event_ticker": event,
         "rules_primary": (f"If {name} has a Tomatometer score of {strike + 1} or above, "
                           f"then the market resolves Yes." if name else ""),
         "open_time": OPEN_T, "close_time": close,
-        "settlement_ts": "2026-06-01T15:30:00Z", "result": "no",
+        "settlement_ts": "2026-06-01T15:30:00Z", "result": result,
         "floor_strike": strike, "strike_type": "greater",
     }
 
@@ -377,6 +377,34 @@ def test_check_staleness_empty_runs_csv(tmp_path):
     open(os.path.join(store, "runs.csv"), "w").close()  # zero-byte file
     code, msg = rec.check_staleness(store, now=T0)
     assert code == 1 and "NEVER" in msg
+
+
+def test_label_consistency_rejoin(tmp_path, capsys):
+    """A self-label contradicting the event's own settlement results warns at capture
+    and gets re-joined on later runs (self-healing after processing-layer fixes, e.g.
+    the 2026-06-02 sentiment-case switch)."""
+    store = str(tmp_path)
+    settled = [mkt("KXRT-BAC-75", "KXRT-BAC", strike=75, result="yes"),
+               mkt("KXRT-BAC-85", "KXRT-BAC", strike=85, result="no")]  # implied [76, 85]
+    fk = FakeKalshi(settled)
+    rec.run(store, fetch_markets=fk.fetch_markets, fetch_candles=fk.fetch_candles,
+            db_factory=lambda: FakeDb(state=(10, 50)), now=T0)  # score 20: inconsistent
+    assert "[label-consistency]" in capsys.readouterr().out
+    res = rec.run(store, fetch_markets=fk.fetch_markets, fetch_candles=fk.fetch_candles,
+                  db_factory=lambda: FakeDb(state=(10, 50)), now=T0 + timedelta(days=7))
+    assert res["n_rejoined"] == 0  # DB still wrong: rejoin recomputes the same values
+    assert "[label-consistency]" in capsys.readouterr().out  # persistent defect keeps warning
+    res = rec.run(store, fetch_markets=fk.fetch_markets, fetch_candles=fk.fetch_candles,
+                  db_factory=lambda: FakeDb(state=(40, 50)), now=T0 + timedelta(days=14))
+    assert res["n_rejoined"] == 2  # both strikes healed by the corrected join
+    led = ledger(store)
+    assert (led["score_self"] == 80).all()
+    assert "[label-consistency]" not in capsys.readouterr().out
+    # once healed, the stored consistent label is never re-touched (system of record
+    # keeps the last settlement-consistent join even if the DB later regresses)
+    rec.run(store, fetch_markets=fk.fetch_markets, fetch_candles=fk.fetch_candles,
+            db_factory=lambda: FakeDb(state=(10, 50)), now=T0 + timedelta(days=21))
+    assert (ledger(store)["score_self"] == 80).all()
 
 
 def test_coverage_watch_missing_close_time(tmp_path, capsys):

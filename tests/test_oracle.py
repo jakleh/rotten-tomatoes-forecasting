@@ -152,3 +152,15 @@ class TestEdgeCases:
         assert o.p_fresh == pytest.approx(2 / 3)
         assert isinstance(o, OracleInputs)
         assert LAG == pd.Timedelta(minutes=1)
+
+
+def test_uppercase_sentiment_counts_as_fresh():
+    # Rows scraped >= ~2026-06-02 carry 'POSITIVE'/'NEGATIVE' (raw table preserved
+    # as-is); the oracle normalizes case at processing.
+    df = _df([_r("2026-05-28 10:00:00", "2026-05-28 11:00:00", sent="POSITIVE"),
+              _r("2026-05-30 10:00:00", "2026-05-30 11:00:00", sent="NEGATIVE"),
+              _r("2026-05-31 10:00:00", "2026-05-31 11:00:00", sent="positive")])
+    o = oracle_inputs(df, CLOSE, SNAP, mode="pure")
+    assert (o.total_obs, o.fresh_obs) == (1, 1)
+    assert (o.n_remaining, o.fresh_remaining) == (2, 1)
+    assert o.p_fresh == 0.5

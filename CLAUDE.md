@@ -44,6 +44,8 @@ The focused RT-modeling workspace for Rotten Tomatoes Tomatometer prediction mar
 
 **Gate-2 status (2026-06-09): STRONG PASS (directional).** After the pre-registered dense-cohort STOP-gate (`notebooks/gate2_density.ipynb`: T-2d/3d/4d runnable with 13/13/11 oracle-clean movies; T-5d underpowered), the oracle ran (`notebooks/gate2_oracle.ipynb`, as_of_id=648979): realized λ/p_fresh through `compute_edge` beats the state-at-snap book on **both Brier and spread-crossing PnL net of taker fees** — T-3d Brier diff +0.0775 [+0.0237, +0.1271], PnL +24.1¢/contract [+11.9, +34.4], 83% win; robust ex-billie; wins on BOTH trade sides; lagged(scrape-time) ≈ pure(publication-time) oracle, so scraper cadence isn't binding. The market prices the current review state (Gate 1b) but **not the flow** (encompassing Δlogloss +0.25 at T-3d/4d). Oracle math: `gates/oracle.py`, test-validated (suite now 628). Full result + caveats: the "GATE 2 RESULT" section of `plans/plan_gate_1_2_calibration.md` + memory `project_gate2_result`.
 
+**Integrity recheck (2026-06-10):** the recorder's settlement-consistency check exposed a sentiment-case switch (UPPERCASE rows scraped ≥ ~2026-06-02; raw table preserved, processing layer now case-insensitive — see the schema note) and a coverage-thin movie (`animal_farm_2025`) inside the Gate-2 clean set. `notebooks/gate2_integrity_recheck.ipynb`: **zero drift** in all 134 published Gate-2 cell rows under the case-insensitive recompute (no uppercase pre-close row touches any cell movie) → published Gate-2/3a numbers stand verbatim; **ex-animal_farm is STRONGER** (pooled +0.1247 Brier diff / +32.1¢ vs +0.0966/+27.5¢). Gate 1/arena not re-run by recorded reasoning. animal_farm is `data_not_ready` for Gate 3b.
+
 **Gate-3a status (2026-06-09): p_fresh is the binding input.** Error-tolerance sweep on the Gate-2 cells (`notebooks/gate3_tolerance.ipynb`): the PnL edge survives λ mis-estimation from **0.55× to 3×** (±170% random noise → 44/50 draws still clear) but only **δ ∈ [−0.05, 0]** of p_fresh error (random ±0.05 → 26/50; over-estimating freshness worse than under-). Shipped-0.2.0 proxies: Ridge λ error comfortably inside the band; `estimate_p_fresh` (~±0.03–0.05) right at the edge → **the improvement priority inverts to p_fresh** (untouched since 0.1.x). Next: **Gate 3b** — run the actual `estimate_lambda`/`estimate_p_fresh` on these cells (A1-pool review cache + ET-midnight convention alignment; compare only P(Yes)) → deployable-stack verdict vs the +27.5¢ oracle ceiling. See "GATE 3a RESULT" in the plan + the 2026-06-09 PM handoff.
 
 This project reads the same Neon PostgreSQL database the RT scraper populates (separate repo at `~/Desktop/rotten-tomatoes-analysis/`) but shares no code or config.
@@ -88,6 +90,7 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── gate1_calibration.ipynb / gate1b_incremental_info.ipynb      # Gate 1 (2026-06-07)
 │   ├── arena_map.ipynb              # Tradeable-edge arena map (2026-06-09)
 │   ├── gate2_density.ipynb / gate2_oracle.ipynb                    # Gate 2 STOP-gate + result (2026-06-09)
+│   ├── gate2_integrity_recheck.ipynb    # 2026-06-10 sentiment-case/coverage recheck (zero drift; ex-ANI stronger)
 │   └── gate3_tolerance.ipynb        # Gate 3a λ/p_fresh error-tolerance band (2026-06-09)
 ├── tests/                           # 648 tests (98 package: edge/features/lambda_model/p_fresh/pool/package
 │                                    #  + 550 gate-support: oracle placement/invariants, compute_edge battery, recorder)
@@ -181,7 +184,7 @@ This table is populated by the RT scraper (separate project). It is **insert-onl
 | reviewer_name | TEXT | Critic's name |
 | publication_name | TEXT | Publication (e.g., "The Guardian") |
 | top_critic | BOOLEAN | True if scraped from top-critics filter |
-| tomatometer_sentiment | TEXT | **"positive" or "negative"** -- this is the fresh/rotten signal |
+| tomatometer_sentiment | TEXT | **"positive"/"negative"; UPPERCASE in rows scraped ≥ ~2026-06-02** -- the fresh/rotten signal. Raw rows preserved as-is (operator call 2026-06-10); **always compare case-insensitively** (`lower()` in SQL / `.str.lower()` on DataFrames — `gates/db_facts.py`, `gates/oracle.py`, `p_fresh.py` already do) |
 | subjective_score | TEXT | Critic's rating in their own scale (e.g., "3/5", "A-", "8/10") |
 | written_review | TEXT | Review snippet text |
 | site_timestamp_text | TEXT | Raw RT relative timestamp as scraped (e.g., "5m", "3h", "2d", "Mar 20") |

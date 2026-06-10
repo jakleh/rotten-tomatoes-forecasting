@@ -58,7 +58,7 @@ def build(status: str = "settled", chunk_minutes: int = 2880) -> tuple[pd.DataFr
                 cur.execute(
                     "SELECT count(*) FILTER (WHERE estimated_timestamp <= %(c)s), "
                     "count(*) FILTER (WHERE estimated_timestamp <= %(c)s "
-                    "                 AND tomatometer_sentiment='positive'), "
+                    "                 AND lower(tomatometer_sentiment)='positive'), "
                     "count(*) FILTER (WHERE estimated_timestamp > %(c)s - interval '1 day' "
                     "                 AND estimated_timestamp <= %(c)s "
                     "                 AND timestamp_confidence='d') "

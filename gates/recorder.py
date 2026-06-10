@@ -47,7 +47,7 @@ EVENTS_COLS = ["run_ts", "event_ticker", "movie_name", "close_time", "n_markets"
                "slug", "n_reviews_db"]
 RUNS_COLS = ["run_ts", "duration_s", "n_settled_api", "n_ledger_before", "n_new_markets",
              "n_new_events", "n_candle_rows_added", "n_aged_out", "n_topped_up",
-             "as_of_id", "db_available", "n_warnings"]
+             "n_rejoined", "as_of_id", "db_available", "n_warnings"]
 
 # Nullable-int columns per file: cast to pandas Int64 at write time so a deferred join's
 # NaN never flips the committed CSVs to "999.0"-style float text (whole-file git churn).
@@ -55,8 +55,8 @@ LEDGER_INT_COLS = ["candle_rows", "total_at_close", "fresh_at_close", "score_sel
                    "lastday_daylevel", "as_of_id"]
 EVENTS_INT_COLS = ["n_markets", "n_reviews_db"]
 RUNS_INT_COLS = ["n_settled_api", "n_ledger_before", "n_new_markets", "n_new_events",
-                 "n_candle_rows_added", "n_aged_out", "n_topped_up", "as_of_id",
-                 "n_warnings"]
+                 "n_candle_rows_added", "n_aged_out", "n_topped_up", "n_rejoined",
+                 "as_of_id", "n_warnings"]
 PAGINATE_CAP_GUARD = 19500  # kalshi_data._paginate caps at 20000, silently
 
 
@@ -146,6 +146,24 @@ def _event_name(markets: list[dict]) -> str:
         if mt:
             return mt.group(1).strip()
     return ""
+
+
+def implied_score_interval(rows: list[dict]) -> tuple[int, int] | None:
+    """Settlement-implied bounds for an event's true score from its own strike results:
+    'Above X' = yes ⇒ score ≥ X+1; = no ⇒ score ≤ X. None when no usable results."""
+    yes, no = [], []
+    for r in rows:
+        fs = r.get("floor_strike")
+        if fs is None or (isinstance(fs, float) and math.isnan(fs)):
+            continue
+        res = _s(r.get("result")).lower()
+        if res == "yes":
+            yes.append(int(fs))
+        elif res == "no":
+            no.append(int(fs))
+    if not yes and not no:
+        return None
+    return ((max(yes) + 1) if yes else 0, (min(no) if no else 100))
 
 
 def _join_row(row: dict, db: _Db, db_norm: dict[str, str], warn) -> bool:
@@ -332,6 +350,42 @@ def run(store_dir: str = STORE, *,
             _write_csv(ledger, LEDGER_COLS, ledger_path, int_cols=LEDGER_INT_COLS)
             print(f"  topped up DB join on {n_topped} previously-captured rows")
 
+    # ---- settlement-consistency check: a self-label must land inside the score interval
+    # implied by the event's OWN strike results. Inconsistent joined rows get a fresh
+    # re-join (self-heals after processing-layer fixes — e.g. the 2026-06-02 sentiment-case
+    # switch); still-inconsistent labels warn every run (coverage/sentiment defect). ----
+    n_rejoined = 0
+    if db is not None and ledger:
+        by_ev: dict[str, list[dict]] = {}
+        for r in ledger:
+            by_ev.setdefault(_s(r["event_ticker"]), []).append(r)
+        changed = False
+        for et in sorted(by_ev):
+            ev_rows = by_ev[et]
+            iv = implied_score_interval(ev_rows)
+            score = ev_rows[0].get("score_self")
+            bad_score = score is None or (isinstance(score, float) and math.isnan(score))
+            if iv is None or not bool(ev_rows[0]["db_joined"]) or bad_score:
+                continue
+            lo, hi = iv
+            if lo <= int(score) <= hi:
+                continue
+            if _s(ev_rows[0]["captured_at"]) != run_ts:  # just-joined rows can't differ
+                before = (ev_rows[0]["total_at_close"], ev_rows[0]["fresh_at_close"])
+                for r in ev_rows:
+                    _join_row(r, db, db_norm, warn)
+                if (ev_rows[0]["total_at_close"], ev_rows[0]["fresh_at_close"]) != before:
+                    n_rejoined += len(ev_rows)
+                    changed = True
+                score = ev_rows[0].get("score_self")
+            if score is None or (isinstance(score, float) and math.isnan(score)) or \
+                    not (lo <= int(score) <= hi):
+                warn(f"[label-consistency] {et}: score_self={score} outside the "
+                     f"settlement-implied [{lo}, {hi}] — DB coverage/sentiment defect?")
+        if changed:
+            _write_csv(ledger, LEDGER_COLS, ledger_path, int_cols=LEDGER_INT_COLS)
+            print(f"  re-joined {n_rejoined} ledger rows whose labels contradicted settlement")
+
     tickers = [_s(r["ticker"]) for r in ledger]
     assert len(tickers) == len(set(tickers)), "ledger ticker uniqueness violated"
 
@@ -360,7 +414,8 @@ def run(store_dir: str = STORE, *,
                "n_settled_api": len(settled), "n_ledger_before": len(captured),
                "n_new_markets": n_new_markets, "n_new_events": n_new_events,
                "n_candle_rows_added": n_candle_rows, "n_aged_out": len(aged_out),
-               "n_topped_up": n_topped, "as_of_id": (db.as_of_id if db is not None else ""),
+               "n_topped_up": n_topped, "n_rejoined": n_rejoined,
+               "as_of_id": (db.as_of_id if db is not None else ""),
                "db_available": db is not None, "n_warnings": len(warnings)}
     _append_csv(summary, RUNS_COLS, os.path.join(store_dir, "runs.csv"),
                 int_cols=RUNS_INT_COLS)  # strictly last

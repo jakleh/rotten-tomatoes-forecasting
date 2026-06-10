@@ -22,7 +22,8 @@ def _compute_fresh_rates(
     sub = reviews_df[reviews_df["movie_slug"].isin(training_slugs)]
     if sub.empty:
         return {}
-    is_fresh = sub["tomatometer_sentiment"] == "positive"
+    # Case-insensitive: DB rows scraped >= ~2026-06-02 carry UPPERCASE sentiment.
+    is_fresh = sub["tomatometer_sentiment"].str.lower() == "positive"
     totals = sub.groupby("reviewer_name").size()
     fresh = is_fresh.groupby(sub["reviewer_name"]).sum()
     fresh_rate = (fresh / totals).fillna(0.5)

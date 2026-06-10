@@ -1,3 +1,4 @@
-run_ts,duration_s,n_settled_api,n_ledger_before,n_new_markets,n_new_events,n_candle_rows_added,n_aged_out,n_topped_up,as_of_id,db_available,n_warnings
-2026-06-10T03:44:43Z,1147.1,338,0,338,19,1210586,0,0,649484,True,8
-2026-06-10T04:50:44Z,2.4,338,338,0,0,0,0,0,649659,True,8
+run_ts,duration_s,n_settled_api,n_ledger_before,n_new_markets,n_new_events,n_candle_rows_added,n_aged_out,n_topped_up,n_rejoined,as_of_id,db_available,n_warnings
+2026-06-10T03:44:43Z,1147.1,338,0,338,19,1210586,0,0,,649484,True,8
+2026-06-10T04:50:44Z,2.4,338,338,0,0,0,0,0,,649659,True,8
+2026-06-10T16:58:26Z,6.9,338,338,0,0,0,0,0,77,652074,True,11

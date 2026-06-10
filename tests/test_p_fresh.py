@@ -87,3 +87,14 @@ class TestEstimatePFresh:
         )
         # low_n_prior relies more on observed (0.625); high relies more on prior.
         assert abs(low - 0.625) < abs(high - 0.625)
+
+
+def test_uppercase_sentiment_equivalent(reviews_df, training_slugs):
+    # Rows scraped >= ~2026-06-02 carry UPPERCASE sentiment; estimate_p_fresh normalizes.
+    upper = reviews_df.assign(
+        tomatometer_sentiment=reviews_df["tomatometer_sentiment"].str.upper())
+    a = estimate_p_fresh(reviews_df, training_slugs, observed_critics=set(),
+                         fresh_count=10, total_count=20)
+    b = estimate_p_fresh(upper, training_slugs, observed_critics=set(),
+                         fresh_count=10, total_count=20)
+    assert a == b

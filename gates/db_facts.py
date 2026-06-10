@@ -11,6 +11,11 @@ pin (monotonic + no deletes), but never infer row counts from id ranges.
 
 Read-only: connects to the read replica; issues SELECT only. Never logs the connection
 string / password.
+
+Sentiment-case note (2026-06-10): rows scraped on/after ~2026-06-02 carry UPPERCASE
+``tomatometer_sentiment`` ('POSITIVE'/'NEGATIVE'); earlier rows are lowercase. The raw
+table is preserved as-is (operator call) — every sentiment comparison here is
+``lower(tomatometer_sentiment)`` so both eras count correctly.
 """
 from __future__ import annotations
 
@@ -97,7 +102,7 @@ def movie_coverage(conn, slug: str, close_ts, as_of_id: int) -> dict:
             """
             SELECT
               count(*)                                                    AS total,
-              count(*) FILTER (WHERE tomatometer_sentiment = 'positive')  AS fresh,
+              count(*) FILTER (WHERE lower(tomatometer_sentiment) = 'positive')  AS fresh,
               min(estimated_timestamp)                                    AS min_ts,
               max(estimated_timestamp)                                    AS max_ts,
               count(*) FILTER (WHERE estimated_timestamp >  %(c)s - interval '1 day'
@@ -122,7 +127,7 @@ def observed_state(conn, slug, cutoff_ts, as_of_id):
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT count(*) FILTER (WHERE tomatometer_sentiment='positive'), count(*) "
+            "SELECT count(*) FILTER (WHERE lower(tomatometer_sentiment)='positive'), count(*) "
             "FROM reviews WHERE movie_slug=%s AND id<=%s AND estimated_timestamp <= %s",
             (slug, as_of_id, cutoff_ts))
         fresh, total = cur.fetchone()
@@ -162,7 +167,7 @@ def snap_density(conn, slug, close_ts, snap_ts, as_of_id) -> dict:
                                  AND estimated_timestamp <= %(c)s)            AS n_remaining,
               count(*) FILTER (WHERE estimated_timestamp >  %(t)s
                                  AND estimated_timestamp <= %(c)s
-                                 AND tomatometer_sentiment = 'positive')      AS n_remaining_fresh,
+                                 AND lower(tomatometer_sentiment) = 'positive')  AS n_remaining_fresh,
               count(*) FILTER (WHERE estimated_timestamp >  %(t)s
                                  AND estimated_timestamp <= %(c)s
                                  AND timestamp_confidence IN ('m','h'))       AS n_remaining_mh,

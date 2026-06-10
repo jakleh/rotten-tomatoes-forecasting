@@ -20,7 +20,7 @@ import os
 
 import pandas as pd
 
-from gates.recorder import STORE
+from gates.recorder import STORE, implied_score_interval
 
 CACHE = os.path.join(os.path.dirname(__file__), "_cache")
 JOIN_COLS = ["slug", "score_self", "total_at_close", "fresh_at_close", "lastday_daylevel"]
@@ -63,6 +63,21 @@ def validate(store_dir: str = STORE, cache_dir: str = CACHE) -> dict:
     for r in candle_diffs[:10]:
         print("  ", r)
 
+    # The check that caught the 2026-06-02 sentiment-case switch: every self-label must
+    # land inside the score interval implied by the event's OWN settlement results.
+    print("\n=== settlement-implied label consistency ===")
+    n_bad = 0
+    for et, g in led.groupby("event_ticker"):
+        iv = implied_score_interval(g.to_dict("records"))
+        s = g["score_self"].iloc[0]
+        if iv is None or pd.isna(s):
+            continue
+        if not (iv[0] <= int(s) <= iv[1]):
+            n_bad += 1
+            print(f"  MISMATCH {et} ({g['slug'].iloc[0]}): score_self={int(s)} "
+                  f"vs implied [{iv[0]},{iv[1]}]")
+    print(f"  {n_bad} inconsistent of {led['event_ticker'].nunique()} events")
+
     ev_path = os.path.join(store_dir, "events_open.csv")
     if os.path.exists(ev_path):
         ev = pd.read_csv(ev_path)
@@ -72,7 +87,8 @@ def validate(store_dir: str = STORE, cache_dir: str = CACHE) -> dict:
               .to_string(index=False))
 
     return {"n_ledger": len(led), "n_overlap": len(m), "join_mismatches": mismatches,
-            "n_candle_diffs": len(candle_diffs), "new_events": new_events}
+            "n_candle_diffs": len(candle_diffs), "new_events": new_events,
+            "n_label_inconsistent": n_bad}
 
 
 if __name__ == "__main__":

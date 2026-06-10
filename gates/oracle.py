@@ -70,7 +70,9 @@ def oracle_inputs(reviews: pd.DataFrame, close_ts, snap_ts, *, mode: str = "pure
         raise ValueError(f"mode must be 'pure' or 'lagged', got {mode!r}")
 
     eff = effective_ts(reviews)
-    fresh = (reviews["tomatometer_sentiment"] == "positive").to_numpy()
+    # Case-insensitive: rows scraped >= ~2026-06-02 carry UPPERCASE sentiment (raw table
+    # preserved as-is per operator; normalized at processing).
+    fresh = (reviews["tomatometer_sentiment"].str.lower() == "positive").to_numpy()
 
     terminal = (eff <= close_ts).to_numpy()
     if mode == "pure":
