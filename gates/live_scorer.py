@@ -91,7 +91,7 @@ def _append_log(rows: list[dict], path: str = LOG_PATH) -> None:
 
 
 def run(event: str | None, snap_days: int, *, verify: bool = False,
-        buffer_c: float = 5.0) -> list[dict]:
+        policy_ev_c: float = 8.0) -> list[dict]:
     from gates import db_facts as dbf
     from gates import pfresh_lib as pl
     from gates.build_gate3b import cell_status, midnight_snap
@@ -246,9 +246,9 @@ def run(event: str | None, snap_days: int, *, verify: bool = False,
                              h, rate, p_c2)
             p_yes = float(e["p_yes"])
             read, ev = trade_read(p_yes, bid, ask, buffer_c=0.0)
-            read_b, _ = trade_read(p_yes, bid, ask, buffer_c=buffer_c)
-            if read != "no trade" and read_b == "no trade":
-                read += " (inside 5c buffer)"
+            # Thursday execution policy (trade-conditioning addendum): gate on EV
+            if read != "no trade" and ev < policy_ev_c:
+                read += f" (below EV-{policy_ev_c:.0f}c policy)"
         if not printed:
             print(f"\n{'strike':>7} {'bid':>6} {'ask':>6} {'P(Yes)':>8} "
                   f"{'read':>22} {'EV c':>7}")
