@@ -23,7 +23,32 @@ This repo is the focused RT-modeling workspace (v0.2.0, Ridge lambda model); the
 
 ---
 
-## Next session — START HERE (handoff 2026-06-10 late PM — p_fresh REGRESSION PROGRAM RAN END-TO-END: BATTERY DECISIVE, BENCH NO WINNER (BAR-INVARIANT); SHADE-AS-INTERIM = THE OPEN OPERATOR DECISION)
+## Next session — START HERE (handoff 2026-06-11 — LIVE PHASE: scorer rehearsed for the 2026-06-12 T-3d runs; SHADE DROPPED ENTIRELY (operator); next session = grade the live reads against settlement)
+
+**Session summary (8 commits `d5f60f1` through `ce711ae` + this close commit, all pushed at close):** GATE 3b executed (shipped stack does NOT clear; p_fresh isolated; `gate3b_cells.csv` = the locked evaluation bench) → the p_fresh regression program end-to-end (battery → C1′/C2 candidates → bench: NO WINNER vs the constant at n=35, but C2 uniformly more resilient on the better-powered training reads — split-half + cross-half + grouped-CV all favor C2) → `gates/live_scorer.py` BUILT + twice adversarially reviewed + rehearsed (asserted anchors; suite **708**) → trade-conditioning sweeps (EV≥8¢ execution policy; terciles = watch-list only) → BACKLOG §1.10 maker experiment filed (capacity: median tradeable movie ≈65K contracts through its T-3d contested strikes in the trade window vs ~hundreds at the touch). Five adversarial Explore reviews this session (gate3b post-build, p_fresh plan pre-build, bench post-build, live-scorer post-build, the conditioning/records critical pass); every finding folded — see the plan review logs.
+
+**Operator decisions (load-bearing):**
+1. **The shade (subtract-a-constant p_fresh) is DROPPED ENTIRELY** — not a candidate, not a baseline ("constants aren't models; a declining-p_fresh trend should be learned" = C2's per-snap terms). C2′ = the sole live candidate. Recorded: plan § "OPERATOR DECISION — 2026-06-11", CLAUDE ¶p_fresh, BACKLOG §1.4.
+2. Adoption/confirmation tests from now on = the candidate's own PnL CI clearing zero on fresh data; the **out-of-sample confirmation** (formerly "tripwire") = the first **K≈8 newly-settled live-scored movies** read profitable/consistent-with-bench (`_cache/live_scores.csv`, filter `mode=='live'`). The **EV≥8¢ policy is itself bench-derived → under test on those same movies** (below-policy reads are logged, not suppressed).
+3. Live runs 2026-06-12 00:01–00:15 ET (the midnight ending Thursday): `--verify`, then KXRT-DIS (trade per reads with EV≥8¢), then KXRT-STO (observation-grade). Operator executes; sizing his.
+
+**NEXT-SESSION TASKS (operator-confirmed at close):**
+1. **Grade the live runs against settlement** (after the 2026-06-15 14:00Z closes): run the recorder (it archives the newly settled DIS/STO markets — manual, ~minutes, the session ritual prompts it), then join `_cache/live_scores.csv` (`mode=='live'`) against settlement outcomes: did the EV≥8¢ reads win, and ≈ as the bench predicted? These are out-of-sample confirmation datapoints #1–2 of K≈8. Write the result into the plan + memory. If the runs did NOT happen (operator skipped), just note it and keep the runbook standing.
+2. **Standing hygiene:** `recorder --check`; coverage watch (new open events → tracking reminders); verify no doc still treats the shade as live (close-session audit checked; re-verify opportunistically).
+3. **If room (both deferrable):** BACKLOG §1.8 legacy price-history parser, OR §1.10 maker-experiment design prep on the kalshi-trading side (execution infra; still gated on the confirmation).
+4. **Parked until ~8 fresh movies accumulate:** C2′ permanent library shipping; the battery+bench re-run on the grown cohort (one estimator pass over the standing machinery); tercile watch-list re-confirmation (~25–30 movies).
+
+**Read at session start:** CLAUDE.md "Current Conventions" + the Gate-3b and p_fresh-program paragraphs; `plans/plan_p_fresh_regression.md` § "RESULT" + the two addenda + § "OPERATOR DECISION"; `plans/plan_live_scorer.md`; memories `project_pfresh_regression_result`, `project_gate3b_result`, `feedback_plain_language_for_coined_terms` (new), `reference_db_access`.
+
+**Conventions established this session:** battery-decides-BUILT / bench-decides-SHIPS / fresh-movies-decide-LIVE; per-snap candidate reads always ride WITH the baseline on the same cells/draws (attribution discipline); paired-on-shared-draws comparisons; bar-invariance checks before "no winner" readouts; a matching VALUE doesn't validate a reviewer's claimed MECHANISM (re-derive the explanation — the 38,155 coincidence); operator-facing text unpacks coined jargon at first use; walk-forward protects coefficients, NOT design-iteration leakage (why fresh movies are the only fully clean test).
+
+**Sanity-check on arrival:** `uv sync && .venv/bin/python -m pytest tests/ -q` (expect **708** green); `.venv/bin/python -m gates.recorder --check` (run the recorder if stale — it captures DIS/STO post-settlement); `git log --oneline -3`; `gates/_cache/{gate3b_cells,pfresh_training_features,pfresh_battery_decisions,pfresh_bench_cells,live_scores}.csv` exist. Kalshi reads sandboxed OK; Neon + nbconvert need `dangerouslyDisableSandbox`.
+
+**Push status:** pushed to `origin/main` at this session's close.
+
+---
+
+## Prior handoff (2026-06-10 late PM) — SUPERSEDED 2026-06-11 (live scorer shipped; shade dropped; live phase began)
 
 **Shipped this session (after `d5f60f1` Gate 3b; operator: "go ahead" through results, weigh-in at the readout):**
 1. **Brainstorm v3 signed** (battery decides BUILT / bench rule decides SHIPS / recorder tripwire decides LIVE) → **`plans/plan_p_fresh_regression.md` v2** (pre-build Explore review: 3 BLOCKING spec holes fixed pre-code — v1's C1 rung was hull-bound dead [oracle outside the [obs_rate, prior] interval in 35/60 bench cells, BOTH ingredients over-fresh at T-3d +0.078/+0.062 → every candidate carries an additive calibration escape]; the cache-only training universe was the bench wearing a hat → full-universe pull; decision-protocol contradictions → paired rule + fallback + tripwire).
