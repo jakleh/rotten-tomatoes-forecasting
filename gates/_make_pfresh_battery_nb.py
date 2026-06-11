@@ -340,6 +340,83 @@ print('12h-grid row sensitivity: STRUCK (post-build review; deferred to the '
       'recorder-growth re-run — plan review log).')
 """
 
+C_ROBUST = """# Training-side RESILIENCE head-to-head (operator question 2026-06-10 PM: does a
+# constant hold up across subgroups, or is the model more robust on future samples?).
+# All on the 529 training rows / 135 movies — no bench looks. Same folds, same rows,
+# same weighted-deviance metric for every contender (locked-row discipline).
+from sklearn.model_selection import GroupKFold
+
+W_SHIP = ft['n_obs'] / (ft['n_obs'] + 20.0)
+ft['p_shipped'] = W_SHIP * ft['P1'] + (1 - W_SHIP) * ft['P2']
+ft['lp_shipped'] = [pl.logit_clip(p) for p in ft['p_shipped']]
+ft['el_P1'] = [pl.emp_logit(f, n) for f, n in zip(ft['fresh_obs'], ft['n_obs'])]
+ft['log1p_total'] = np.log1p(ft['n_obs'])
+ft['el_x_log'] = ft['el_P1'] * ft['log1p_total']
+ft['lp_P3'] = [pl.logit_clip(p) for p in ft['P3']]
+for n in (2, 3, 4):
+    ft[f'snap_{n}'] = (ft['snap_days'] == n).astype(float)
+    ft[f'el_x_snap{n}'] = ft['el_P1'] * ft[f'snap_{n}']
+F_C1 = ['lp_shipped', 'snap_2', 'snap_3', 'snap_4']
+F_C2 = ['el_P1', 'log1p_total', 'el_x_log', 'lp_P3', 'snap_2', 'snap_3', 'snap_4',
+        'el_x_snap2', 'el_x_snap3', 'el_x_snap4', 'mass_consumed']
+
+def s_star(sub):
+    w = pl.row_weights(sub) * sub['n_rem']
+    return -float(np.average(sub['p_shipped'] - sub['y'], weights=w))
+
+gkf = GroupKFold(5)
+slugs_arr = ft['slug'].to_numpy()
+for col in ['oos_shade_fix', 'oos_shade_fit', 'oos_c1', 'oos_c2']:
+    ft[col] = np.nan
+for tr, te in gkf.split(ft, groups=slugs_arr):
+    train, test = ft.iloc[tr], ft.iloc[te]
+    ft.loc[ft.index[te], 'oos_shade_fix'] = (test['p_shipped'] - 0.03).clip(0, 1)
+    ft.loc[ft.index[te], 'oos_shade_fit'] = (test['p_shipped'] + s_star(train)).clip(0, 1)
+    m1, _, _ = pl.fit_binomial_glm(train, F_C1)
+    m2, _, _ = pl.fit_binomial_glm(train, F_C2)
+    ft.loc[ft.index[te], 'oos_c1'] = m1.predict_proba(test[F_C1].to_numpy())[:, 1]
+    ft.loc[ft.index[te], 'oos_c2'] = m2.predict_proba(test[F_C2].to_numpy())[:, 1]
+print('=== grouped-CV OOS deviance, identical rows/folds (lower better) ===')
+print(f"{'':<14}{'pooled':>8}" + ''.join(f"{f'T-{n}d':>8}" for n in [1, 2, 3, 4]))
+for col, name in [('p_shipped', 'shipped'), ('oos_shade_fix', 'shade -0.03'),
+                  ('oos_shade_fit', 'shade fitted'), ('oos_c1', "C1'"),
+                  ('oos_c2', 'C2')]:
+    per = [pl.deviance_of_predictor(ft[ft['snap_days'] == n], col) for n in [1, 2, 3, 4]]
+    print(f"{name:<14}{pl.deviance_of_predictor(ft, col):>8.4f}"
+          + ''.join(f"{v:>8.4f}" for v in per))
+
+print('\\n=== split-half stability (the operator test) ===')
+med_close = ft['close_dt'].median() if 'close_dt' in ft else None
+ft['close_dt'] = pd.to_datetime(ft['close'], utc=True, format='ISO8601')
+med_close = ft.groupby('slug')['close_dt'].first().median()
+halves = {'early': ft['close_dt'] <= med_close, 'late': ft['close_dt'] > med_close}
+rng_h = np.random.default_rng(7)
+movies_arr = np.array(sorted(ft['slug'].unique()))
+pick = set(rng_h.choice(movies_arr, len(movies_arr) // 2, replace=False))
+halves['randomA'] = ft['slug'].isin(pick)
+halves['randomB'] = ~ft['slug'].isin(pick)
+print('fitted shade constant s* per half (+ per-snap constants):')
+for name, mask in halves.items():
+    sub = ft[mask]
+    per_snap = {n: s_star(sub[sub['snap_days'] == n]) for n in [1, 2, 3, 4]}
+    print(f"  {name:<8} ({sub['slug'].nunique():>3} movies): s*={s_star(sub):+.3f} | "
+          + ' '.join(f"T{n}d {v:+.3f}" for n, v in per_snap.items()))
+print('\\ncross-half OOS deviance (fit on one half, score the OTHER half):')
+for a, b in [('early', 'late'), ('late', 'early'), ('randomA', 'randomB'),
+             ('randomB', 'randomA')]:
+    train, test = ft[halves[a]], ft[halves[b]].copy()
+    test['x_shade'] = (test['p_shipped'] + s_star(train)).clip(0, 1)
+    m2h, _, _ = pl.fit_binomial_glm(train, F_C2)
+    test['x_c2'] = m2h.predict_proba(test[F_C2].to_numpy())[:, 1]
+    d_sh = pl.deviance_of_predictor(test, 'x_shade')
+    d_c2 = pl.deviance_of_predictor(test, 'x_c2')
+    d_t3_sh = pl.deviance_of_predictor(test[test['snap_days'] == 3], 'x_shade')
+    d_t3_c2 = pl.deviance_of_predictor(test[test['snap_days'] == 3], 'x_c2')
+    print(f"  fit {a:<8} -> score {b:<8}: shade(fitted) {d_sh:.4f} vs C2 {d_c2:.4f} "
+          f"(C2 edge {d_sh - d_c2:+.4f}) | at T-3d: {d_t3_sh:.4f} vs {d_t3_c2:.4f} "
+          f"(edge {d_t3_sh - d_t3_c2:+.4f})")
+"""
+
 C_DECIDE = """# Battery decisions -> the bench notebook builds EXACTLY this (machine-readable)
 cells3b = pd.read_csv(CACHE + '/gate3b_a1_cache.csv')
 cells3b['estimated_timestamp'] = pd.to_datetime(cells3b['estimated_timestamp'], utc=True, format='ISO8601')
@@ -389,7 +466,8 @@ nb.cells = [nbf.v4.new_markdown_cell(MD), nbf.v4.new_code_cell(C_LOAD),
             nbf.v4.new_code_cell(C_T2), nbf.v4.new_code_cell(C_T3T4),
             nbf.v4.new_code_cell(C_T5), nbf.v4.new_code_cell(C_T6T7),
             nbf.v4.new_code_cell(C_PROBE_DROW), nbf.v4.new_code_cell(C_SENS),
-            nbf.v4.new_code_cell(C_DECIDE), nbf.v4.new_markdown_cell(MD_TAIL)]
+            nbf.v4.new_code_cell(C_ROBUST), nbf.v4.new_code_cell(C_DECIDE),
+            nbf.v4.new_markdown_cell(MD_TAIL)]
 nb.metadata.kernelspec = {"name": "python3", "display_name": "Python 3",
                           "language": "python"}
 os.makedirs("notebooks", exist_ok=True)
