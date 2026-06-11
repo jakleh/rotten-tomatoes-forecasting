@@ -365,6 +365,53 @@ print(f"P(Yes): shipped {r['p_est']:.3f} | shade {r['py_shade']:.3f} | "
       f"{r['ask']:.2f} y={int(r['y'])}")
 """
 
+C_EXPLORE = """# EXPLORATORY trade-conditioning sweeps (operator question 2026-06-10 PM:
+# edge-size / price / input bands). FENCE: hypothesis-grade at n=35/13 movies —
+# the buffer sweep is the one principled (monotone, pre-registerable) deploy knob;
+# the tercile tables are hypothesis generators ONLY, never filters until the
+# recorder cohort confirms them. Nothing here revises any verdict.
+bench.to_csv(CACHE + '/pfresh_bench_cells.csv', index=False)  # persist candidate p̂s
+print('persisted bench candidate predictions -> pfresh_bench_cells.csv')
+
+print('\\n=== minimum-edge BUFFER sweep (trade iff P̂ clears the book by >= b) ===')
+print(f"{'b':>4} | {'C2 n':>5} {'mean':>7} {'CI-lo':>7} {'win%':>5} | "
+      f"{'shade n':>7} {'mean':>7} {'win%':>5}")
+for b in [0, 2, 5, 8, 10, 15]:
+    out = {}
+    for col in ['py_C2', 'py_shade']:
+        pv = pnl_stat(pool_cells, col, buffer_c=float(b))
+        t = pv[~np.isnan(pv)]
+        cis = [float(np.nanmean(pnl_stat(pool_cells.iloc[idx], col, buffer_c=float(b))))
+               for idx in rs_pool]
+        out[col] = (len(t), float(np.mean(t)) if len(t) else np.nan,
+                    float(np.nanpercentile(cis, 2.5)),
+                    100 * float((t > 0).mean()) if len(t) else np.nan)
+    c2, sh = out['py_C2'], out['py_shade']
+    print(f"{b:>4} | {c2[0]:>5} {c2[1]:>7.1f} {c2[2]:>7.1f} {c2[3]:>5.0f} | "
+          f"{sh[0]:>7} {sh[1]:>7.1f} {sh[3]:>5.0f}")
+
+print('\\n=== EXPLORATORY terciles (C2\\', buffer=0; n per bucket is TINY) ===')
+pv = pnl_stat(pool_cells, 'py_C2')
+tr = pool_cells[~np.isnan(pv)].assign(pnl=pv[~np.isnan(pv)])
+tr['claimed_edge'] = np.abs(tr['py_C2'] - tr['mid'])
+tr['exp_remaining'] = tr['rate_hat'] * tr['h']
+for col, label in [('claimed_edge', 'claimed edge |P̂−mid|'),
+                   ('mid', 'contract price (mid)'),
+                   ('pf_C2', 'p̂_fresh (C2)'),
+                   ('exp_remaining', 'expected remaining reviews (λ̂·h)'),
+                   ('obs_total_est', 'observed count at snap')]:
+    q = pd.qcut(tr[col].rank(method='first'), 3, labels=['low', 'mid', 'high'])
+    t = tr.groupby(q, observed=True).agg(
+        n=('pnl', 'size'), mean_pnl=('pnl', 'mean'),
+        win_pct=('pnl', lambda s: 100 * (s > 0).mean()),
+        rng=(col, lambda s: f"{s.min():.2f}..{s.max():.2f}"))
+    print(f"-- {label} --")
+    print(t.round(1).to_string())
+print('\\ncorr(claimed edge, realized pnl) =',
+      round(float(np.corrcoef(tr['claimed_edge'], tr['pnl'])[0, 1]), 2),
+      '(n=%d trades; hypothesis-grade)' % len(tr))
+"""
+
 MD_TAIL = """## Reading guide
 
 - All candidate bench reads are **design-derived-from-bench** (brainstorm §4 honest
@@ -392,7 +439,8 @@ nb = nbf.v4.new_notebook()
 nb.cells = [nbf.v4.new_markdown_cell(MD), nbf.v4.new_code_cell(C_LOAD),
             nbf.v4.new_code_cell(C_MACHINERY), nbf.v4.new_code_cell(C_BENCHFEAT),
             nbf.v4.new_code_cell(C_FITS), nbf.v4.new_code_cell(C_SCORE),
-            nbf.v4.new_code_cell(C_DIAG), nbf.v4.new_markdown_cell(MD_TAIL)]
+            nbf.v4.new_code_cell(C_DIAG), nbf.v4.new_code_cell(C_EXPLORE),
+            nbf.v4.new_markdown_cell(MD_TAIL)]
 nb.metadata.kernelspec = {"name": "python3", "display_name": "Python 3",
                           "language": "python"}
 os.makedirs("notebooks", exist_ok=True)
