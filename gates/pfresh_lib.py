@@ -326,6 +326,65 @@ def fit_binomial_glm(rows: pd.DataFrame, feature_cols: list[str],
     return model, best_c, best_dev
 
 
+F_C1 = ["lp_shipped", "snap_2", "snap_3", "snap_4"]
+F_C2 = ["el_P1", "log1p_total", "el_x_log", "lp_P3", "snap_2", "snap_3", "snap_4",
+        "el_x_snap2", "el_x_snap3", "el_x_snap4", "mass_consumed"]
+
+
+def prepare_training_frame(ft: pd.DataFrame) -> pd.DataFrame:
+    """Derived candidate-feature columns on the battery feature frame — the SAME
+    formulas the bench notebook used (one implementation for scorer + re-scores)."""
+    out = ft.copy()
+    w = out["n_obs"] / (out["n_obs"] + 20.0)
+    out["p_shipped"] = w * out["P1"] + (1 - w) * out["P2"]
+    out["lp_shipped"] = [logit_clip(p) for p in out["p_shipped"]]
+    out["el_P1"] = [emp_logit(f, n) for f, n in zip(out["fresh_obs"], out["n_obs"])]
+    out["log1p_total"] = np.log1p(out["n_obs"])
+    out["el_x_log"] = out["el_P1"] * out["log1p_total"]
+    out["lp_P3"] = [logit_clip(p) for p in out["P3"]]
+    for n in (2, 3, 4):
+        out[f"snap_{n}"] = (out["snap_days"] == n).astype(float)
+        out[f"el_x_snap{n}"] = out["el_P1"] * out[f"snap_{n}"]
+    out["close_dt"] = pd.to_datetime(out["close"], utc=True, format="ISO8601")
+    return out
+
+
+def c2_feature_row(cache: pd.DataFrame, target_slug: str, pool_slugs: list[str],
+                   snap_days: int, snap_ts: pd.Timestamp,
+                   *, shrink_k: float = SHRINK_K) -> dict | None:
+    """One C2′ feature row for a LIVE/bench target at a snap — the bench notebook's
+    cell construction, factored (plan_live_scorer pin 3). ``cache`` = estimator-view
+    reviews for target ∪ pool. Returns the row dict (F_C2 keys + diagnostics), or
+    None when n_obs == 0 (pre-registered deploy rule: raw-prior passthrough outside
+    the GLM)."""
+    tr = cache[cache["movie_slug"] == target_slug]
+    obs = tr[tr["estimated_timestamp"] < snap_ts]
+    n_obs = len(obs)
+    fresh_obs = int(obs["tomatometer_sentiment"].eq("positive").sum())
+    oc = set(obs["reviewer_name"])
+    p2 = prior_remaining(cache, pool_slugs, oc)
+    p3 = prior_remaining(cache, pool_slugs, oc, shrink_k=shrink_k)
+    if n_obs == 0:
+        return None
+    pool_rows = cache[cache["movie_slug"].isin(pool_slugs)]
+    base = pool_rows.groupby("reviewer_name")["movie_slug"].nunique() / len(pool_slugs)
+    mass = (float(base[base.index.isin(oc)].sum() / base.sum())
+            if base.sum() > 0 else 0.0)
+    w = n_obs / (n_obs + 20.0)
+    el = emp_logit(fresh_obs, n_obs)
+    row = {
+        "el_P1": el, "log1p_total": float(np.log1p(n_obs)),
+        "el_x_log": el * float(np.log1p(n_obs)), "lp_P3": logit_clip(p3),
+        "mass_consumed": mass,
+    }
+    for n in (2, 3, 4):
+        row[f"snap_{n}"] = 1.0 if snap_days == n else 0.0
+        row[f"el_x_snap{n}"] = el * row[f"snap_{n}"]
+    row.update({"n_obs": n_obs, "fresh_obs": fresh_obs, "P2": p2, "P3": p3,
+                "p_shipped": w * (fresh_obs / n_obs) + (1 - w) * p2})
+    return row
+
+
 def temporal_rows(rows: pd.DataFrame, target_slug: str, target_close: pd.Timestamp,
                   min_snap_ts: pd.Timestamp, *, floor: int = 60) -> pd.DataFrame:
     """Training rows for scoring one bench target [F4][F5]: movies closing strictly

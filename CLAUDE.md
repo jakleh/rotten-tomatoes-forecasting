@@ -88,6 +88,8 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   │                           #   in-grid oracle, 0.2.0 estimator pass) -> _cache/gate3b_*.csv
 │   ├── build_pfresh_training.py # Driver: p_fresh-regression training pull + row scaffold -> _cache/pfresh_*.csv
 │   ├── pfresh_lib.py           # Pure p_fresh-program helpers (parser/curves/anchors/priors/GLM/temporal fits)
+│   ├── live_scorer.py          # READ-ONLY live scorer: C2' p_fresh + shipped λ -> compute_edge vs the live
+│   │                           #   book; --verify rehearsal; appends _cache/live_scores.csv (tripwire record)
 │   ├── recorder.py             # §1.7 weekly settled-market recorder -> recorded/ (idempotent; --check staleness)
 │   ├── validate_recorded.py    # Cross-check recorded/ vs _cache/ (the recorder's rerunnable Phase-3 audit)
 │   ├── slug_map.py             # Shared Kalshi-title -> DB-slug mapping (build_cohort + recorder)
@@ -103,8 +105,8 @@ Follow `PROTOCOL.md` for all non-trivial work. Do not write code before writing 
 │   ├── gate3b_deployable.ipynb      # Gate 3b deployable-stack verdict + m̂/δ̂ audit (2026-06-10)
 │   ├── pfresh_battery.ipynb         # p_fresh Phase-0 falsification battery (2026-06-10)
 │   └── pfresh_bench.ipynb           # p_fresh candidates vs the locked bench — NO WINNER (2026-06-10)
-├── tests/                           # 699 tests (99 package: edge/features/lambda_model/p_fresh/pool/package
-│                                    #  + 600 gate-support: oracle placement/invariants, compute_edge battery, recorder, gate3b + pfresh helpers)
+├── tests/                           # 708 tests (99 package: edge/features/lambda_model/p_fresh/pool/package
+│                                    #  + 609 gate-support: oracle placement/invariants, compute_edge battery, recorder, gate3b + pfresh + live-scorer helpers)
 ├── pyproject.toml              # Dependencies (uv managed), package-data config
 ├── CLAUDE.md                   # This file
 ├── PROTOCOL.md                 # Build protocol (plan -> implement -> validate)
