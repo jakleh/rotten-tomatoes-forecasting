@@ -107,6 +107,67 @@ The recorder's settlement-consistency check (self-label must land inside the sco
 
 `~/Desktop/kalshi-trading/data/KXRT/price_histories/` holds **145 movie directories / 436 git-tracked CSVs / 24MB** of 2024–2026 Kalshi *website* price-history exports (verified 2026-06-09: per-movie `kalshi-price-history-<event>-{minute,hour,day}.csv`, wide per-strike columns in cents — e.g. inside_out_2 minute data from 2024-05; event→`{open_date, close_date, rt_slug, disabled}` metadata in `configs/KXRT/movie_mapping.json`, 165 entries). **Single price series per strike, no bid/ask** → usable for calibration-class reads (Gate-1-style, contested under-pricing hint n) but NOT spread-crossing PnL / book-state work. Task: one-off parser → a legacy-fidelity-tier table alongside `gates/recorded/`, handling the two ticker eras (`rt*` → `kxrt*`); note repo B's `data/KXRT/movies_index.csv` (input to its mapping builder) is gitignored-absent there. Feeds: the contested-hint n and §1.4/§2.2/§2.3 p_fresh cohort growth. Source: `brainstorm/brainstorm_recorder_infra.md` §1.
 
+### 1.11 LIVE PHASE — out-of-sample confirmation + productionization roadmap (2026-06-15)
+
+The deployable stack (shipped λ artifact + **C2′ p_fresh**) is now in the live-confirmation
+phase via the read-only `gates/live_scorer.py`. **Datapoint #1 = Disclosure Day** (graded
+2026-06-15): C2′ called the downward drift the market wasn't pricing (T-3d state 175/213=82.2%;
+shipped 0.809 → C2′ 0.765 → implied final ≈80.7; **settled 80**), all three NO reads correct;
+operator +$70/$400 early-exit (entered T-3d, exited T-2d). STO excluded (`data_not_ready`).
+Memory: `project_live_phase_status`. **n=1 ≈ zero evidence — hold the line.**
+
+**Confirmation bar (rigorous, not hand-wave):** the pre-registered power analysis
+(`notebooks/gate2_density.ipynb`) gives **power 0.56 at n=13, 0.73 at n=16** for a real 25%
+effect → a real edge reads inconclusive ~½ the time at 13 movies. So the gate3b bench's
+**C2′ +10¢/contract [−4.4,+25.2]** is a *positive point estimate that is underpowered*, NOT
+"no edge." To reach ~0.8 power wants **~18–20 clean movies**; ~30 for a trustworthy
+calibration curve. Calendar-bound (~1–1.5 clean tradeable movies/wk).
+
+**Why the PnL test is movie-limited (corrected 2026-06-15):** NOT a scarcity of contested
+books — the arena map found contested ≤10¢ books at T-3d for **16/16** movies. The limit is
+**book-DATA availability**: Kalshi's API serves only a rolling recent window, so older movies'
+order books have aged out. We have reviews for ~135–160 movies but books for only the ~19
+the recorder captured (§1.7). The 100+ older movies' books are gone (except §1.8's legacy
+price series — no bid/ask → calibration-class only). The recorder exists to stop this loss
+going forward; it is the binding input to growing the PnL cohort.
+
+**Two confirmation tests, different data ceilings:**
+- *Beats-the-book PnL* — needs the book → ~19-movie ceiling (grows ~2/wk via the recorder).
+- *Calibration* (P(Yes)=0.27 → resolves YES ~27%) — needs no book, just prediction + Kalshi
+  label → can use more movies. **Build candidate (high value): a broad walk-forward
+  calibration / reliability test.** Honest cohort sizing (not the earlier "100+" overclaim):
+  gated by (a) Kalshi labels for old movies (needs §1.8 legacy parse, terminal price =
+  settlement) and (b) clean near-*snap* (T-3d) timestamps — most old movies are day-level
+  backfill → noisy snap state. Cleanest cohort (post-2026-04-19 close so λ-artifact is OOS +
+  m/h near snap) ≈ the recorded set; relaxed (legacy labels + day-level snap w/ noon-shift +
+  the April λ artifact as mildly-in-sample, defensible since λ is the forgiving input per
+  Gate-3a) reaches more, noisier. Stratify clean-vs-noisy; movie-cluster the CI (strikes
+  within a movie are one thesis). This doubles as the **scheduled drift monitor** (recent-
+  window calibration degrading vs older = market-behavior drift).
+
+**Productionization roadmap — SEQUENCED AFTER confirmation (don't gold-plate an unconfirmed
+edge; VoI discipline).** During confirmation build ONLY the thin operating loop (it doubles as
+the production seed); the heavy buildout waits.
+- *Phase A (during confirmation, thin):* recorder keeps running (exists); **open-movie radar**
+  (small, worth building now: open KXRT movies + their T-3d snap datetimes + candidate-clean
+  flag → tells you when/what to score); scorer at each clean T-3d snap (exists); **grading
+  job** (join `live_scores.csv` `mode=='live'` vs recorder settlement → running OOS tally =
+  the confirmation instrument + dashboard seed).
+- *Phase B (after confirmation):* **λ-artifact refit job** (the shipped `default_regressor.json`
+  is frozen since 2026-04-19 → stale; C2 already refits per-run for free, so only λ needs a
+  cadence — monthly / every +20 movies via `scripts/fit_default_regressor.py`); scheduled
+  calibration/perf report (Phase-A grading on a cron); **data-health monitoring** — incl. the
+  operator's **active DB-consistency check** (re-scrape a movie's full RT page up to its last
+  DB review, diff against Neon → catches the coverage-gap class directly + earlier than the
+  passive settlement-consistency check; heavier than incremental scrape; lives in the scraper
+  repo) + **embargo-lift detection** (track new movies from embargo lift = the #1 moat
+  discipline) + scrape-freshness alerts; monitoring/alerting (scraper failures on GCloud,
+  "T-3d snap approaching," integrity flag fired); **UI/dashboard** (most expensive, build LAST
+  on Phase-A data): open movies/markets, scraped rows + last scrape time, current model read
+  per open movie, recent settled grades, scraper logs/alerts. Deploy shape stays the thin
+  script→VM (`project_orchestrator_to_scripts_direction`); a Linux VM also sidesteps the
+  macOS Desktop-TCC block (`reference_macos_desktop_tcc`).
+
 ## 2. Deferred model improvements
 
 ### 2.1 Finite-pool model (partially addressed at 0.2.0)
